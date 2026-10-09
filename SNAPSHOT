@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09
-Status: planning approved, implementation starting
-Current phase: Phase 0 — Proof of Concept
+Last updated: 2026-10-09 (commit 2)
+Status: foundation ready, starting domain types
+Current phase: Phase 0 — Proof of Concept (scaffold verified)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -22,7 +22,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | # | Commit | Scope | Tình trạng |
 |---|--------|-------|------------|
 | 1 | docs: lưu thiết kế và snapshot | docs/DESIGN.md, SNAPSHOT | DONE |
-| 2 | chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS | PENDING |
+| 2 | chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS, rename tnls | DONE |
 | 3 | feat: domain types tunnel (Rust) | TunnelConfig, mode, state, errors | PENDING |
 | 4 | feat: SQLite persistence | CRUD tunnels + migration | PENDING |
 | 5 | feat: OpenSSH process runner | spawn ssh bằng args, capture stderr | PENDING |
@@ -37,21 +37,31 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 ## Completed
 
 - [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
+- [2026-10-09] Scaffold Tauri 2 + React-TS, rename tnls, verify build (commit 2).
 
-## Changed files (commit 1)
+## Changed files (commit 2)
 
-- docs/DESIGN.md (mới)
-- SNAPSHOT (mới)
+- package.json, package-lock.json (mới, rename tnls)
+- index.html, vite.config.ts, tsconfig.json, tsconfig.node.json (mới)
+- src/, public/ (mới, template React)
+- src-tauri/Cargo.toml, Cargo.lock, build.rs, tauri.conf.json, capabilities/, icons/, src/ (mới)
+- README.md (viết lại cho tnls)
+- .gitignore, src-tauri/.gitignore (mới)
+- SNAPSHOT (cập nhật)
 
-## Checks (commit 1)
+## Checks (commit 2)
 
-- Repo trống, đã `git init`, chưa có commit nào trước đó.
-- Toolchain xác nhận: node, npm, rustc/cargo, ssh đều khả dụng.
+- `npm install`: OK (27 packages).
+- `npm run build` (tsc + vite): OK.
+- `cargo check` (src-tauri): OK, 5m46s.
 
 ## Known issues
 
-- Chưa có code; scaffold Tauri cần mạng để tải template/deps.
+- Template mặc định còn màn hình greet demo, chưa có UI tunnel (làm ở commit 8-9).
+- Chưa thêm deps tunnel (tokio, rusqlite, uuid, chrono, thiserror, tracing): làm ở commit 3-4.
+- Thư mục scaffold tạm ../tnls-scaffold cần xóa sau khi merge.
 
 ## Next
 
-- Commit 2: scaffold Tauri 2 + React-TS, verify build.
+- Commit 3: domain types tunnel (Rust).
+- Xóa ../tnls-scaffold sau khi commit 2 xong.
