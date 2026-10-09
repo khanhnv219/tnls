@@ -5,4 +5,5 @@
 //! on some Windows toolchains).
 
 pub mod persistence;
+pub mod ssh;
 pub mod tunnel;
