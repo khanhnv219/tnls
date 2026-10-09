@@ -10,6 +10,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
+pub use rusqlite::Connection as DbConnection;
+
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelInput, TunnelMode};
 
 const SCHEMA_V1: &str = r#"

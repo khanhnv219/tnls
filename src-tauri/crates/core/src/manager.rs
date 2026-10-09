@@ -15,6 +15,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::ssh::{self, SshChild, STARTUP_GRACE_MS};
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelState, TunnelStatus};
@@ -108,7 +109,8 @@ impl ManagedChild for RealChild {
 }
 
 /// Manager-level event for Tauri to forward to the frontend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManagerEvent {
     pub id: String,
     pub kind: ManagerEventKind,
@@ -116,11 +118,12 @@ pub struct ManagerEvent {
 }
 
 /// What happened to a tunnel.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
 pub enum ManagerEventKind {
     Started { pid: u32 },
     StateChanged(TunnelState),
-    RetryScheduled { attempt: u32, delay: Duration },
+    RetryScheduled { attempt: u32, delay_secs: u64 },
     Failed { error: String },
     Stopped,
 }
@@ -482,7 +485,7 @@ impl<S: Spawner> TunnelManager<S> {
                 id,
                 ManagerEventKind::RetryScheduled {
                     attempt: attempts + 1,
-                    delay,
+                    delay_secs: delay.as_secs(),
                 },
             );
         } else {
