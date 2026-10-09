@@ -1,0 +1,57 @@
+# SNAPSHOT — tnls (SSH tunnel manager)
+
+Last updated: 2026-10-09
+Status: planning approved, implementation starting
+Current phase: Phase 0 — Proof of Concept
+Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0, OpenSSH_for_Windows_9.5p1
+
+## Product
+
+Desktop app (Tauri 2 + React + Rust) quản lý SSH tunnels: lưu profiles,
+bật/tắt bằng UI, chạy nền qua system tray, không cần terminal mỗi tunnel.
+
+## Architecture (chốt)
+
+Tauri 2 / React+TS+Vite / Rust+Tokio / OpenSSH process / SQLite /
+tracing / GitHub Actions. Xem chi tiết: docs/DESIGN.md.
+
+## Commit log
+
+Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
+
+| # | Commit | Scope | Tình trạng |
+|---|--------|-------|------------|
+| 1 | docs: lưu thiết kế và snapshot | docs/DESIGN.md, SNAPSHOT | DONE |
+| 2 | chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS | PENDING |
+| 3 | feat: domain types tunnel (Rust) | TunnelConfig, mode, state, errors | PENDING |
+| 4 | feat: SQLite persistence | CRUD tunnels + migration | PENDING |
+| 5 | feat: OpenSSH process runner | spawn ssh bằng args, capture stderr | PENDING |
+| 6 | feat: tunnel lifecycle manager | start/stop/restart, supervisor | PENDING |
+| 7 | feat: Tauri commands + events | CRUD + lifecycle IPC | PENDING |
+| 8 | feat: frontend tunnel list UI | bảng, trạng thái, controls | PENDING |
+| 9 | feat: tunnel form local forwarding | tạo/sửa, validate port/bind | PENDING |
+| 10 | feat: TCP health check | Running/Degraded/Failed | PENDING |
+| 11 | feat: system tray + shutdown | tray menu, graceful stop | PENDING |
+| 12 | test/ci: tests + workflow | unit tests, GitHub Actions | PENDING |
+
+## Completed
+
+- [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
+
+## Changed files (commit 1)
+
+- docs/DESIGN.md (mới)
+- SNAPSHOT (mới)
+
+## Checks (commit 1)
+
+- Repo trống, đã `git init`, chưa có commit nào trước đó.
+- Toolchain xác nhận: node, npm, rustc/cargo, ssh đều khả dụng.
+
+## Known issues
+
+- Chưa có code; scaffold Tauri cần mạng để tải template/deps.
+
+## Next
+
+- Commit 2: scaffold Tauri 2 + React-TS, verify build.
