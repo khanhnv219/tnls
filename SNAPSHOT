@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 8)
-Status: frontend tunnel list UI done, starting tunnel form
-Current phase: Phase 1 — MVP (list UI verified, CRUD form next)
+Last updated: 2026-10-09 (commit 9)
+Status: tunnel form done, starting TCP health check
+Current phase: Phase 1 — MVP (CRUD UI complete, health check next)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -29,7 +29,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 6 | feat: tunnel lifecycle manager | tnls-core manager: start/stop/retry supervisor | DONE |
 | 7 | feat: Tauri commands + events | AppState, 9 commands, supervisor thread, events | DONE |
 | 8 | feat: frontend tunnel list UI | TunnelList, StatusBadge, LogDrawer, event refetch | DONE |
-| 9 | feat: tunnel form local forwarding | tạo/sửa, validate port/bind | PENDING |
+| 9 | feat: tunnel form local forwarding | TunnelForm create/edit, validation, Edit button | DONE |
 | 10 | feat: TCP health check | Running/Degraded/Failed | PENDING |
 | 11 | feat: system tray + shutdown | tray menu, graceful stop | PENDING |
 | 12 | test/ci: tests + workflow | unit tests, GitHub Actions | PENDING |
@@ -44,28 +44,28 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tunnel lifecycle manager: supervisor, retry, events (commit 6).
 - [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
 - [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
+- [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
 
-## Changed files (commit 8)
+## Changed files (commit 9)
 
-- src/App.tsx (viết lại: load configs+status, event subscription, actions, delete qua runAction)
-- src/App.css (viết lại: table, badge, drawer, dark mode)
-- src/components/TunnelList.tsx (mới: bảng, canStart/canStop Record, confirm delete)
-- src/components/StatusBadge.tsx (mới: badge 7 trạng thái)
-- src/components/LogDrawer.tsx (mới: xem get_tunnel_logs)
+- src/components/TunnelForm.tsx (mới: form tạo/sửa, validate port/bind/remote, dynamic ẩn remote)
+- src/components/TunnelList.tsx (thêm nút Edit + prop onEdit)
+- src/App.tsx (state formTarget/saving/saveError, handleSave create/update, nút + New tunnel)
+- src/App.css (thêm .top-actions, .form-drawer, .tunnel-form, .field-error, dark mode)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 8)
+## Checks (commit 9)
 
 - `npx tsc --noEmit`: OK.
-- `npm run build`: OK (23 modules).
-- Visual: empty state render (ngoài Tauri, error banner đúng); mock IPC 3 rows Stopped/Running/Failed render đúng badge, pid, retry count, actions.
+- `npm run build`: OK.
+- Visual (mock IPC): form mở từ + New tunnel, có style đúng; submit rỗng hiện đủ lỗi name/sshTarget/ports/remote; phát hiện mất import App.css giữa chừng (đã vá + verify lại).
 
 ## Known issues
 
 - Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND → test chạy trên tnls-core.
-- Chưa có form tạo/sửa (commit 9); chưa có nút Edit trên từng row.
 - Chưa health check Degraded (commit 10); state degraded có badge nhưng backend chưa emit.
+- Chưa system tray (commit 11).
 
 ## Next
 
-- Commit 9: tunnel form local forwarding (tạo/sửa, validate port/bind).
+- Commit 10: TCP health check (Running/Degraded/Failed, health event).

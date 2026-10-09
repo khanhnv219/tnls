@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogDrawer } from "./components/LogDrawer";
+import { TunnelForm } from "./components/TunnelForm";
 import { TunnelList } from "./components/TunnelList";
 import {
+  createTunnel,
   deleteTunnel,
   getRuntimeStatus,
   listTunnels,
@@ -9,8 +11,14 @@ import {
   restartTunnel,
   startTunnel,
   stopTunnel,
+  updateTunnel,
 } from "./lib/api";
-import type { TunnelConfig, TunnelRow, TunnelStatus } from "./lib/types";
+import type {
+  TunnelConfig,
+  TunnelInput,
+  TunnelRow,
+  TunnelStatus,
+} from "./lib/types";
 import "./App.css";
 
 function mergeRows(
@@ -53,6 +61,11 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [logTarget, setLogTarget] = useState<TunnelRow | null>(null);
+  const [formTarget, setFormTarget] = useState<TunnelConfig | null | undefined>(
+    undefined,
+  );
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     refresh(setRows, setLoadError);
@@ -89,6 +102,27 @@ export default function App() {
     [rows],
   );
 
+  const handleSave = useCallback(
+    async (input: TunnelInput) => {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        if (formTarget?.id) {
+          await updateTunnel(formTarget.id, input);
+        } else {
+          await createTunnel(input);
+        }
+        setFormTarget(undefined);
+        refresh(setRows, setLoadError);
+      } catch (e) {
+        setSaveError(String(e));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [formTarget],
+  );
+
   return (
     <main className="app">
       <header className="topbar">
@@ -99,13 +133,18 @@ export default function App() {
             running
           </p>
         </div>
-        <button
-          className="ghost"
-          onClick={() => refresh(setRows, setLoadError)}
-          title="Reload from backend"
-        >
-          Refresh
-        </button>
+        <div className="top-actions">
+          <button
+            className="ghost"
+            onClick={() => refresh(setRows, setLoadError)}
+            title="Reload from backend"
+          >
+            Refresh
+          </button>
+          <button onClick={() => { setSaveError(null); setFormTarget(null); }}>
+            + New tunnel
+          </button>
+        </div>
       </header>
 
       {loadError && (
@@ -125,6 +164,7 @@ export default function App() {
         onStop={(id) => runAction(id, stopTunnel)}
         onRestart={(id) => runAction(id, restartTunnel)}
         onDelete={(id) => runAction(id, deleteTunnel)}
+        onEdit={(row) => { setSaveError(null); setFormTarget(row); }}
         onShowLogs={setLogTarget}
       />
 
@@ -133,6 +173,16 @@ export default function App() {
           tunnelId={logTarget.id}
           tunnelName={logTarget.name}
           onClose={() => setLogTarget(null)}
+        />
+      )}
+
+      {formTarget !== undefined && (
+        <TunnelForm
+          initial={formTarget}
+          saving={saving}
+          saveError={saveError}
+          onSave={handleSave}
+          onClose={() => setFormTarget(undefined)}
         />
       )}
     </main>

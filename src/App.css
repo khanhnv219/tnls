@@ -299,3 +299,90 @@ pre.logs {
     border-bottom-color: #2d3342;
   }
 }
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-drawer {
+  width: min(520px, 94vw);
+}
+
+.tunnel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+}
+
+.tunnel-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.tunnel-form input,
+.tunnel-form select {
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: inherit;
+  color: #0f0f0f;
+  background: #fff;
+}
+
+.tunnel-form input:focus,
+.tunnel-form select:focus {
+  outline: none;
+  border-color: #396cd8;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.tunnel-form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-top: 22px;
+}
+
+.tunnel-form label.check input {
+  width: 16px;
+  height: 16px;
+}
+
+.field-error {
+  font-size: 12px;
+  font-weight: 500;
+  color: #dc2626;
+}
+
+.form-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tunnel-form label {
+    color: #d1d5db;
+  }
+  .tunnel-form input,
+  .tunnel-form select {
+    color: #f6f6f6;
+    background: #1f2430;
+    border-color: #374151;
+  }
+}

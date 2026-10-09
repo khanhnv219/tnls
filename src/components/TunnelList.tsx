@@ -35,6 +35,7 @@ export function TunnelList({
   onStop,
   onRestart,
   onDelete,
+  onEdit,
   onShowLogs,
 }: {
   rows: TunnelRow[];
@@ -44,6 +45,7 @@ export function TunnelList({
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (row: TunnelRow) => void;
   onShowLogs: (row: TunnelRow) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -119,6 +121,7 @@ export function TunnelList({
                   <button disabled={busy} onClick={() => onRestart(row.id)}>
                     Restart
                   </button>
+                  <button onClick={() => onEdit(row)}>Edit</button>
                   <button onClick={() => onShowLogs(row)}>Logs</button>
                   {confirmDelete === row.id ? (
                     <>
