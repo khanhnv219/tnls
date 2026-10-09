@@ -1,51 +1,140 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { LogDrawer } from "./components/LogDrawer";
+import { TunnelList } from "./components/TunnelList";
+import {
+  deleteTunnel,
+  getRuntimeStatus,
+  listTunnels,
+  onTunnelEvent,
+  restartTunnel,
+  startTunnel,
+  stopTunnel,
+} from "./lib/api";
+import type { TunnelConfig, TunnelRow, TunnelStatus } from "./lib/types";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+function mergeRows(
+  configs: TunnelConfig[],
+  statuses: TunnelStatus[],
+): TunnelRow[] {
+  const byId: Record<string, TunnelStatus> = {};
+  for (const s of statuses) byId[s.id] = s;
+  return configs.map((c) => ({
+    ...c,
+    status: byId[c.id] ?? {
+      id: c.id,
+      state: "stopped",
+      pid: null,
+      startedAt: null,
+      lastError: null,
+      restartCount: 0,
+    },
+  }));
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+async function refresh(
+  setRows: (rows: TunnelRow[]) => void,
+  setLoadError: (msg: string | null) => void,
+) {
+  try {
+    const [configs, statuses] = await Promise.all([
+      listTunnels(),
+      getRuntimeStatus(),
+    ]);
+    setRows(mergeRows(configs, statuses));
+    setLoadError(null);
+  } catch (e) {
+    setLoadError(`Failed to load tunnels: ${String(e)}`);
   }
+}
+export default function App() {
+  const [rows, setRows] = useState<TunnelRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [logTarget, setLogTarget] = useState<TunnelRow | null>(null);
+
+  useEffect(() => {
+    refresh(setRows, setLoadError);
+    let unsubscribe: (() => void) | undefined;
+    // Any lifecycle event invalidates the status cache: refetch.
+    // Cheap (local IPC) and always consistent with the supervisor.
+    onTunnelEvent(() => refresh(setRows, setLoadError)).then((fn) => {
+      unsubscribe = fn;
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  const runAction = useCallback(
+    async (id: string, action: (id: string) => Promise<unknown>) => {
+      setPending((p) => ({ ...p, [id]: true }));
+      setActionError(null);
+      try {
+        await action(id);
+      } catch (e) {
+        setActionError(String(e));
+      } finally {
+        setPending((p) => ({ ...p, [id]: false }));
+        refresh(setRows, setLoadError);
+      }
+    },
+    [],
+  );
+
+  const runningCount = useMemo(
+    () =>
+      rows.filter(
+        (r) => r.status.state === "starting" || r.status.state === "running",
+      ).length,
+    [rows],
+  );
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="app">
+      <header className="topbar">
+        <div>
+          <h1>tnls</h1>
+          <p className="muted">
+            {rows.length} tunnel{rows.length === 1 ? "" : "s"} · {runningCount}{" "}
+            running
+          </p>
+        </div>
+        <button
+          className="ghost"
+          onClick={() => refresh(setRows, setLoadError)}
+          title="Reload from backend"
+        >
+          Refresh
+        </button>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {loadError && (
+        <p className="error" role="alert">
+          {loadError}{" "}
+          <button className="ghost" onClick={() => refresh(setRows, setLoadError)}>
+            Retry
+          </button>
+        </p>
+      )}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+      <TunnelList
+        rows={rows}
+        pending={pending}
+        actionError={actionError}
+        onStart={(id) => runAction(id, startTunnel)}
+        onStop={(id) => runAction(id, stopTunnel)}
+        onRestart={(id) => runAction(id, restartTunnel)}
+        onDelete={(id) => runAction(id, deleteTunnel)}
+        onShowLogs={setLogTarget}
+      />
+
+      {logTarget && (
+        <LogDrawer
+          tunnelId={logTarget.id}
+          tunnelName={logTarget.name}
+          onClose={() => setLogTarget(null)}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      )}
     </main>
   );
 }
-
-export default App;

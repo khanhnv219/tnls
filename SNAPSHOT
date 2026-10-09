@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 7)
-Status: Tauri commands + events done, starting frontend tunnel list UI
-Current phase: Phase 1 — MVP (backend + IPC complete, UI next)
+Last updated: 2026-10-09 (commit 8)
+Status: frontend tunnel list UI done, starting tunnel form
+Current phase: Phase 1 — MVP (list UI verified, CRUD form next)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -28,7 +28,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 5 | feat: OpenSSH process runner | tnls-core ssh: argv builder, spawn, classify | DONE |
 | 6 | feat: tunnel lifecycle manager | tnls-core manager: start/stop/retry supervisor | DONE |
 | 7 | feat: Tauri commands + events | AppState, 9 commands, supervisor thread, events | DONE |
-| 8 | feat: frontend tunnel list UI | bảng, trạng thái, controls | PENDING |
+| 8 | feat: frontend tunnel list UI | TunnelList, StatusBadge, LogDrawer, event refetch | DONE |
 | 9 | feat: tunnel form local forwarding | tạo/sửa, validate port/bind | PENDING |
 | 10 | feat: TCP health check | Running/Degraded/Failed | PENDING |
 | 11 | feat: system tray + shutdown | tray menu, graceful stop | PENDING |
@@ -43,36 +43,29 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] OpenSSH process runner: argv builder, spawn, classify (commit 5).
 - [2026-10-09] Tunnel lifecycle manager: supervisor, retry, events (commit 6).
 - [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
+- [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
 
-## Changed files (commit 7)
+## Changed files (commit 8)
 
-- src-tauri/Cargo.toml (thêm tracing, tracing-subscriber)
-- src-tauri/Cargo.lock (thêm tracing deps)
-- src-tauri/crates/core/src/manager.rs (serde cho ManagerEvent/Kind, delay_secs)
-- src-tauri/crates/core/src/persistence.rs (re-export DbConnection)
-- src-tauri/src/lib.rs (setup tracing + state::init, 9 commands)
-- src-tauri/src/state.rs (mới: AppState, db+manager Mutex, supervisor thread 250ms, event topics)
-- src-tauri/src/commands.rs (mới: list/create/update/delete/start/stop/restart/logs/status)
-- src/lib/types.ts (mới: TunnelConfig/Input/Status/State/Event types)
-- src/lib/api.ts (mới: invoke wrappers + event subscription)
+- src/App.tsx (viết lại: load configs+status, event subscription, actions, delete qua runAction)
+- src/App.css (viết lại: table, badge, drawer, dark mode)
+- src/components/TunnelList.tsx (mới: bảng, canStart/canStop Record, confirm delete)
+- src/components/StatusBadge.tsx (mới: badge 7 trạng thái)
+- src/components/LogDrawer.tsx (mới: xem get_tunnel_logs)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 7)
+## Checks (commit 8)
 
-- `cargo test -p tnls-core`: OK, 31 passed / 0 failed.
-- `cargo check --workspace`: OK.
-- `cargo clippy --workspace --all-targets`: OK, không warning.
-- `cargo fmt -- --check`: OK.
-- `npx tsc --noEmit`: OK (frontend types khớp IPC).
+- `npx tsc --noEmit`: OK.
+- `npm run build`: OK (23 modules).
+- Visual: empty state render (ngoài Tauri, error banner đúng); mock IPC 3 rows Stopped/Running/Failed render đúng badge, pid, retry count, actions.
 
 ## Known issues
 
 - Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND → test chạy trên tnls-core.
-- Commands cần AppHandle thật nên chưa có integration test; bù bằng unit core + type check.
-- api.ts giữ wrappers (IPC boundary — thuộc diện allowed của rule ts-no-tiny-functions).
-- Template greet demo trong App.tsx vẫn còn; thay ở commit 8.
-- Capability hiện tại đủ (core:default cho invoke + emit); chưa cần thêm permission.
+- Chưa có form tạo/sửa (commit 9); chưa có nút Edit trên từng row.
+- Chưa health check Degraded (commit 10); state degraded có badge nhưng backend chưa emit.
 
 ## Next
 
-- Commit 8: frontend tunnel list UI (bảng, trạng thái, start/stop, event subscription).
+- Commit 9: tunnel form local forwarding (tạo/sửa, validate port/bind).
