@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 5)
-Status: OpenSSH process runner done, starting tunnel lifecycle manager
-Current phase: Phase 0 — Proof of Concept (ssh spawn verified)
+Last updated: 2026-10-09 (commit 6)
+Status: tunnel lifecycle manager done, starting Tauri commands + events
+Current phase: Phase 1 — MVP (core backend complete, IPC next)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -26,7 +26,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 3 | feat: domain types tunnel (Rust) | tnls-core: TunnelConfig, mode, state, errors | DONE |
 | 4 | feat: SQLite persistence | tnls-core persistence: schema v1, CRUD, auto-start | DONE |
 | 5 | feat: OpenSSH process runner | tnls-core ssh: argv builder, spawn, classify | DONE |
-| 6 | feat: tunnel lifecycle manager | start/stop/restart, supervisor | PENDING |
+| 6 | feat: tunnel lifecycle manager | tnls-core manager: start/stop/retry supervisor | DONE |
 | 7 | feat: Tauri commands + events | CRUD + lifecycle IPC | PENDING |
 | 8 | feat: frontend tunnel list UI | bảng, trạng thái, controls | PENDING |
 | 9 | feat: tunnel form local forwarding | tạo/sửa, validate port/bind | PENDING |
@@ -41,28 +41,27 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Domain types tunnel trong tnls-core + workspace (commit 3).
 - [2026-10-09] SQLite persistence: schema v1, CRUD, auto-start filter (commit 4).
 - [2026-10-09] OpenSSH process runner: argv builder, spawn, classify (commit 5).
+- [2026-10-09] Tunnel lifecycle manager: supervisor, retry, events (commit 6).
 
-## Changed files (commit 5)
+## Changed files (commit 6)
 
-- src-tauri/crates/core/src/lib.rs (pub mod ssh)
-- src-tauri/crates/core/src/ssh.rs (mới: ssh_binary, probe_ssh, build_argv, SshChild, classify_exit + 8 tests)
-- src-tauri/Cargo.lock (không đổi đáng kể)
+- src-tauri/crates/core/src/lib.rs (pub mod manager)
+- src-tauri/crates/core/src/manager.rs (mới: TunnelManager, Spawner/SshSpawner, ManagedChild, retry policy, poll tick, events + 10 tests)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 5)
+## Checks (commit 6)
 
-- `cargo test -p tnls-core`: OK, 21 passed / 0 failed (7 domain + 6 persistence + 8 ssh).
+- `cargo test -p tnls-core`: OK, 31 passed / 0 failed (7 domain + 6 persistence + 8 ssh + 10 manager).
 - `cargo clippy -p tnls-core --all-targets`: OK, không warning.
 - `cargo fmt -- --check`: OK.
 - `cargo check --workspace`: OK.
-- Smoke thật: `ssh -N -T -o ExitOnForwardFailure=yes -o BatchMode=yes ... -L ... invalid-host` → exit 255 sau 5.5s, stderr phân loại được.
 
 ## Known issues
 
 - Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND khi link WebView2 → test chạy trên tnls-core.
 - Persistence là sync rusqlite; khi gắn vào Tauri async (commit 7) sẽ bọc Mutex/spawn_blocking.
-- `SshChild::spawn` thật chưa được gọi end-to-end (chờ manager ở commit 6).
+- Manager poll là sync tick; commit 7 cần background thread + event bridge sang frontend.
 
 ## Next
 
-- Commit 6: tunnel lifecycle manager (start/stop/restart, supervisor, retry).
+- Commit 7: Tauri commands + events (CRUD + lifecycle IPC, state bridge).
