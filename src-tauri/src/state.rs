@@ -34,15 +34,26 @@ impl AppState {
             .map_err(|e| format!("manager lock poisoned: {e}"))
     }
 
-    /// Load every stored profile into the manager (no auto-start yet).
-    fn load_profiles(&self) -> Result<usize, String> {
+    /// Load every stored profile into the manager, then start the ones
+    /// flagged `auto_start`. Returns (loaded, started, failed).
+    fn load_profiles(&self) -> Result<(usize, usize, usize), String> {
         let db = self.db()?;
         let configs = persistence::list(&db).map_err(|e| e.to_string())?;
         let mut manager = self.manager()?;
+        let (mut started, mut failed) = (0, 0);
         for config in &configs {
             manager.upsert_config(config.clone());
+            if config.auto_start {
+                match manager.start(&config.id) {
+                    Ok(_) => started += 1,
+                    Err(e) => {
+                        tracing::warn!(tunnel = %config.name, "auto-start failed: {e}");
+                        failed += 1;
+                    }
+                }
+            }
         }
-        Ok(configs.len())
+        Ok((configs.len(), started, failed))
     }
 
     /// One supervisor tick + forward new events to all windows.
@@ -85,8 +96,8 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         db: Mutex::new(conn),
         manager: Mutex::new(TunnelManager::new(SshSpawner)),
     };
-    let loaded = state.load_profiles()?;
-    tracing::info!(db = %path.display(), profiles = loaded, "tnls state ready");
+    let (loaded, started, failed) = state.load_profiles()?;
+    tracing::info!(db = %path.display(), profiles = loaded, auto_started = started, auto_start_failed = failed, "tnls state ready");
     app.manage(state);
 
     let handle = app.clone();

@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (post-commit: MSVC env persisted, direct cargo build verified)
-Status: MVP complete — full app links + runs on MSVC toolchain
-Current phase: Phase 1 — MVP DONE (verification next: tauri dev e2e)
+Last updated: 2026-10-09 (commit 13)
+Status: auto-start done — app hoàn thiện cơ bản, chờ hướng tiếp
+Current phase: Hoàn thiện app (e2e bởi user OK, auto-start xong)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -33,6 +33,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 10 | feat: TCP health check | health module, Degraded transitions, event bridge | DONE |
 | 11 | feat: system tray + shutdown | tray menu, close-to-tray, graceful quit | DONE |
 | 12 | test/ci: tests + workflow | unit tests, GitHub Actions | DONE |
+| 13 | feat: auto-start tunnels on launch | load profiles + start flagged ones | DONE |
 
 ## Completed
 
@@ -48,35 +49,27 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
 - [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
 - [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
+- [2026-10-09] User e2e: tạo tunnel thật thành công trên `tauri dev`.
+- [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
 
-## Changed files (commit 12)
+## Changed files (commit 13)
 
-- .github/workflows/ci.yml (mới: rust fmt/test/clippy/check × 3 OS + frontend tsc/build)
-- README.md (viết lại: develop/build/test, lưu ý MSVC link)
-- SNAPSHOT (cập nhật, MVP DONE)
+- src-tauri/src/state.rs (load_profiles trả (loaded, started, failed), start auto_start, log counts)
+- SNAPSHOT (cập nhật)
 
-## Checks (commit 12)
+## Checks (commit 13)
 
+- `cargo check --workspace`: OK.
+- `cargo clippy --workspace --all-targets`: OK, 0 warnings.
 - `cargo test -p tnls-core`: OK, 38 passed / 0 failed.
 - `cargo fmt -- --check`: OK.
-- `cargo clippy --workspace --all-targets`: OK, 0 warnings.
-- `cargo check --workspace`: OK.
-- `npx tsc --noEmit`: OK.
-- `npm run build`: OK.
 
 ## Known issues
 
-- MSVC env đã persist vĩnh viễn (user scope): INCLUDE/LIB/LIBPATH,
-  WindowsSdkDir, WindowsSDKVersion, UCRTVersion + 3 bin dirs (MSVC 14.29 x64,
-  SDK 10.0.26100.0 x64) prepend vào user PATH. Terminal MỚI tự có env,
-  `cargo build` chạy thẳng không cần vcvarsall.
-- Toolchain MSVC đã pin cho thư mục repo (`rustup override`):
-  `cargo build/test/check` trong tnls tự dùng msvc, không cần `+toolchain`.
-- `~/.cargo/config.toml` pin linker MSVC tuyệt đối cho target
-  x86_64-pc-windows-msvc (tránh `link.exe` của Git đứng trước trong PATH).
-- Tray + e2e cần chạy `npm run tauri dev` trên máy có WebView2 (chưa làm ở phiên này).
+- MSVC env đã persist (user scope), toolchain MSVC pinned, linker pinned — `cargo build` chạy thẳng.
+- Tray + health + retry e2e phụ thuộc bastion thật của user (đã tạo tunnel OK).
 
 ## Next
 
-- Chạy `npm run tauri dev`, tạo tunnel thật tới bastion, verify start/stop/retry/health/tray end-to-end.
-- Phase 2: SOCKS, remote forward, ProxyJump form, keychain, import/export.
+- Chờ user chọn hướng hoàn thiện tiếp (Phase 2 hoặc polish MVP).
+- Gợi ý Phase 2: SOCKS, remote forward, ProxyJump form, keychain, import/export.
