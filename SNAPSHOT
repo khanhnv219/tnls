@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 3)
-Status: domain types done, starting SQLite persistence
-Current phase: Phase 0 — Proof of Concept (domain layer verified)
+Last updated: 2026-10-09 (commit 4)
+Status: SQLite persistence done, starting OpenSSH process runner
+Current phase: Phase 0 — Proof of Concept (storage layer verified)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -24,7 +24,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 1 | docs: lưu thiết kế và snapshot | docs/DESIGN.md, SNAPSHOT | DONE |
 | 2 | chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS, rename tnls | DONE |
 | 3 | feat: domain types tunnel (Rust) | tnls-core: TunnelConfig, mode, state, errors | DONE |
-| 4 | feat: SQLite persistence | CRUD tunnels + migration | PENDING |
+| 4 | feat: SQLite persistence | tnls-core persistence: schema v1, CRUD, auto-start | DONE |
 | 5 | feat: OpenSSH process runner | spawn ssh bằng args, capture stderr | PENDING |
 | 6 | feat: tunnel lifecycle manager | start/stop/restart, supervisor | PENDING |
 | 7 | feat: Tauri commands + events | CRUD + lifecycle IPC | PENDING |
@@ -39,30 +39,29 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
 - [2026-10-09] Scaffold Tauri 2 + React-TS, rename tnls, verify build (commit 2).
 - [2026-10-09] Domain types tunnel trong tnls-core + workspace (commit 3).
+- [2026-10-09] SQLite persistence: schema v1, CRUD, auto-start filter (commit 4).
 
-## Changed files (commit 3)
+## Changed files (commit 4)
 
-- src-tauri/Cargo.toml (workspace members + dep tnls-core)
-- src-tauri/Cargo.lock (thêm tnls-core, chrono, uuid, thiserror)
-- src-tauri/crates/core/Cargo.toml (mới)
-- src-tauri/crates/core/src/lib.rs (mới, re-export tunnel)
-- src-tauri/crates/core/src/tunnel/mod.rs (mới: TunnelMode, TunnelState, TunnelConfig, TunnelInput, TunnelStatus, TunnelError + 7 unit tests)
-- src-tauri/src/lib.rs (pub use tnls_core::tunnel)
+- src-tauri/crates/core/Cargo.toml (thêm rusqlite 0.40 bundled)
+- src-tauri/crates/core/src/lib.rs (pub mod persistence)
+- src-tauri/crates/core/src/persistence.rs (mới: open/open_memory/migrate, create/get/list/update/delete/list_auto_start + 6 tests)
+- src-tauri/Cargo.lock (thêm rusqlite + deps C bundled)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 3)
+## Checks (commit 4)
 
-- `cargo test -p tnls-core`: OK, 7 passed / 0 failed.
+- `cargo test -p tnls-core`: OK, 13 passed / 0 failed (7 domain + 6 persistence).
 - `cargo check --workspace`: OK.
 - `cargo fmt -- --check`: OK.
+- `cargo clippy -p tnls-core --all-targets`: OK, không warning.
 
 ## Known issues
 
 - Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND khi link WebView2 → giải quyết bằng cách tách tnls-core không phụ thuộc Tauri; test chạy trên core.
-- Message `missing cargo:dev, please update tauri` gây hiểu lầm: version đã mới nhất (tauri 2.12.2 / tauri-build 2.7.1); root cause thật là mất header [dependencies] khi edit Cargo.toml (đã sửa).
-- Toolchain mặc định là windows-gnu; workaround manifest MSVC không áp dụng được → không dùng.
 - Template greet demo vẫn còn; UI tunnel ở commit 8-9.
+- Persistence là sync rusqlite; khi gắn vào Tauri async (commit 7) sẽ bọc spawn_blocking hoặc Mutex — chưa làm.
 
 ## Next
 
-- Commit 4: SQLite persistence (CRUD tunnels + migration).
+- Commit 5: OpenSSH process runner (spawn ssh bằng args, capture stderr).
