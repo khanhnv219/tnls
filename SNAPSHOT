@@ -1,9 +1,9 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 12)
-Status: MVP complete — all 12 commits done
+Last updated: 2026-10-09 (post-commit: MSVC build verified)
+Status: MVP complete — full app links + runs on MSVC toolchain
 Current phase: Phase 1 — MVP DONE (verification next: tauri dev e2e)
-Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
+Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (VS2019 MSVC 14.29 verified, gnu default), OpenSSH_for_Windows_9.5p1
 
 ## Product
 
@@ -66,8 +66,11 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Known issues
 
-- Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND → test chạy trên tnls-core.
-- `cargo build` full app trên gnu fail ở linker MinGW (.drectve corrupt) — giới hạn toolchain; check pass cả gnu + msvc. Cần MSVC Build Tools để link binary cuối.
+- MSVC đã xác minh: VS2019 Professional + MSVC 14.29 + Windows SDK (rc.exe) đầy đủ;
+  `cargo +stable-x86_64-pc-windows-msvc build` OK 3m41s, `test --workspace` OK
+  (38 core + 0 app). Lỗi gnu-linker trước đó chỉ do thiếu env VS, không phải code.
+- Shell mặc định không có env VS: muốn build/link MSVC phải nạp
+  `vcvarsall.bat x64` trước, hoặc chạy từ "Developer Command Prompt".
 - Tray + e2e cần chạy `npm run tauri dev` trên máy có WebView2 (chưa làm ở phiên này).
 
 ## Next
