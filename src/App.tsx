@@ -64,8 +64,10 @@ export default function App() {
   const [formTarget, setFormTarget] = useState<TunnelConfig | null | undefined>(
     undefined,
   );
+  const [draft, setDraft] = useState<TunnelInput | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     refresh(setRows, setLoadError);
@@ -102,6 +104,17 @@ export default function App() {
     [rows],
   );
 
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q === "") return rows;
+    return rows.filter((r) =>
+      [r.name, r.sshTarget, r.remoteHost ?? "", `${r.localPort}`, `${r.remotePort ?? ""}`]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [rows, query]);
+
   const handleSave = useCallback(
     async (input: TunnelInput) => {
       setSaving(true);
@@ -112,6 +125,7 @@ export default function App() {
         } else {
           await createTunnel(input);
         }
+        setDraft(null);
         setFormTarget(undefined);
         refresh(setRows, setLoadError);
       } catch (e) {
@@ -123,6 +137,24 @@ export default function App() {
     [formTarget],
   );
 
+  const handleDuplicate = useCallback((row: TunnelRow) => {
+    setSaveError(null);
+    // Prefill a *creation* form from an existing row: same settings,
+    // new name; handleSave creates because formTarget stays null.
+    setDraft({
+      name: `${row.name} (copy)`,
+      mode: row.mode,
+      sshTarget: row.sshTarget,
+      bindAddress: row.bindAddress,
+      localPort: row.localPort,
+      remoteHost: row.remoteHost,
+      remotePort: row.remotePort,
+      identityFile: row.identityFile,
+      autoStart: false,
+      keepAliveInterval: row.keepAliveInterval,
+    });
+    setFormTarget(null);
+  }, []);
   return (
     <main className="app">
       <header className="topbar">
@@ -134,6 +166,13 @@ export default function App() {
           </p>
         </div>
         <div className="top-actions">
+          <input
+            className="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, host, port…"
+            aria-label="Search tunnels"
+          />
           <button
             className="ghost"
             onClick={() => refresh(setRows, setLoadError)}
@@ -141,7 +180,7 @@ export default function App() {
           >
             Refresh
           </button>
-          <button onClick={() => { setSaveError(null); setFormTarget(null); }}>
+          <button onClick={() => { setDraft(null); setSaveError(null); setFormTarget(null); }}>
             + New tunnel
           </button>
         </div>
@@ -156,15 +195,22 @@ export default function App() {
         </p>
       )}
 
+      {query.trim() !== "" && (
+        <p className="muted">
+          {visibleRows.length} of {rows.length} shown
+        </p>
+      )}
+
       <TunnelList
-        rows={rows}
+        rows={visibleRows}
         pending={pending}
         actionError={actionError}
         onStart={(id) => runAction(id, startTunnel)}
         onStop={(id) => runAction(id, stopTunnel)}
         onRestart={(id) => runAction(id, restartTunnel)}
         onDelete={(id) => runAction(id, deleteTunnel)}
-        onEdit={(row) => { setSaveError(null); setFormTarget(row); }}
+        onEdit={(row) => { setDraft(null); setSaveError(null); setFormTarget(row); }}
+        onDuplicate={handleDuplicate}
         onShowLogs={setLogTarget}
       />
 
@@ -178,11 +224,13 @@ export default function App() {
 
       {formTarget !== undefined && (
         <TunnelForm
+          key={formTarget?.id ?? `new-${draft?.name ?? "blank"}`}
           initial={formTarget}
+          draft={draft}
           saving={saving}
           saveError={saveError}
           onSave={handleSave}
-          onClose={() => setFormTarget(undefined)}
+          onClose={() => { setDraft(null); setFormTarget(undefined); }}
         />
       )}
     </main>

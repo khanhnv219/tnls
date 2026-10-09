@@ -386,3 +386,7 @@ pre.logs {
     border-color: #374151;
   }
 }
+
+input.search {
+  min-width: 220px;
+}

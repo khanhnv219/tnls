@@ -15,36 +15,42 @@ function parsePort(raw: string): number | null {
 
 export function TunnelForm({
   initial,
+  draft,
   saving,
   saveError,
   onSave,
   onClose,
 }: {
   initial: TunnelConfig | null;
+  draft?: TunnelInput | null;
   saving: boolean;
   saveError: string | null;
   onSave: (input: TunnelInput) => void;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [mode, setMode] = useState<TunnelMode>(initial?.mode ?? "local");
-  const [sshTarget, setSshTarget] = useState(initial?.sshTarget ?? "");
+  const seed = (draft ?? initial) as
+    | (Partial<TunnelInput> & { keepAliveInterval?: number | null })
+    | null
+    | undefined;
+  const [name, setName] = useState(seed?.name ?? "");
+  const [mode, setMode] = useState<TunnelMode>(
+    (seed?.mode as TunnelMode | undefined) ?? "local",
+  );
+  const [sshTarget, setSshTarget] = useState(seed?.sshTarget ?? "");
   const [bindAddress, setBindAddress] = useState(
-    initial?.bindAddress ?? "127.0.0.1",
+    seed?.bindAddress ?? "127.0.0.1",
   );
   const [localPort, setLocalPort] = useState(
-    initial ? String(initial.localPort) : "",
+    seed?.localPort != null ? String(seed.localPort) : "",
   );
-  const [remoteHost, setRemoteHost] = useState(initial?.remoteHost ?? "");
+  const [remoteHost, setRemoteHost] = useState(seed?.remoteHost ?? "");
   const [remotePort, setRemotePort] = useState(
-    initial?.remotePort != null ? String(initial.remotePort) : "",
+    seed?.remotePort != null ? String(seed.remotePort) : "",
   );
-  const [identityFile, setIdentityFile] = useState(
-    initial?.identityFile ?? "",
-  );
-  const [autoStart, setAutoStart] = useState(initial?.autoStart ?? false);
+  const [identityFile, setIdentityFile] = useState(seed?.identityFile ?? "");
+  const [autoStart, setAutoStart] = useState(seed?.autoStart ?? false);
   const [keepAlive, setKeepAlive] = useState(
-    initial ? String(initial.keepAliveInterval) : "30",
+    seed?.keepAliveInterval != null ? String(seed.keepAliveInterval) : "30",
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
 

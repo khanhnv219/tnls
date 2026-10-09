@@ -36,6 +36,7 @@ export function TunnelList({
   onRestart,
   onDelete,
   onEdit,
+  onDuplicate,
   onShowLogs,
 }: {
   rows: TunnelRow[];
@@ -46,6 +47,7 @@ export function TunnelList({
   onRestart: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (row: TunnelRow) => void;
+  onDuplicate: (row: TunnelRow) => void;
   onShowLogs: (row: TunnelRow) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -122,6 +124,7 @@ export function TunnelList({
                     Restart
                   </button>
                   <button onClick={() => onEdit(row)}>Edit</button>
+                  <button onClick={() => onDuplicate(row)}>Duplicate</button>
                   <button onClick={() => onShowLogs(row)}>Logs</button>
                   {confirmDelete === row.id ? (
                     <>
