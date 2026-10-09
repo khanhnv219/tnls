@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (commit 10)
-Status: TCP health check done, starting system tray + shutdown
-Current phase: Phase 1 — MVP (health verified, tray next)
+Last updated: 2026-10-09 (commit 11)
+Status: system tray + shutdown done, starting tests + CI
+Current phase: Phase 1 — MVP (features complete, verification next)
 Toolchain: Node v24.14.0, npm 11.9.0, rustc 1.96.0 (gnu default, msvc available), OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -31,7 +31,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 8 | feat: frontend tunnel list UI | TunnelList, StatusBadge, LogDrawer, event refetch | DONE |
 | 9 | feat: tunnel form local forwarding | TunnelForm create/edit, validation, Edit button | DONE |
 | 10 | feat: TCP health check | health module, Degraded transitions, event bridge | DONE |
-| 11 | feat: system tray + shutdown | tray menu, graceful stop | PENDING |
+| 11 | feat: system tray + shutdown | tray menu, close-to-tray, graceful quit | DONE |
 | 12 | test/ci: tests + workflow | unit tests, GitHub Actions | PENDING |
 
 ## Completed
@@ -46,33 +46,31 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
 - [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
 - [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
+- [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
 
-## Changed files (commit 10)
+## Changed files (commit 11)
 
-- src-tauri/crates/core/src/health.rs (mới: tcp_check 200ms + 3 tests)
-- src-tauri/crates/core/src/lib.rs (pub mod health)
-- src-tauri/crates/core/src/manager.rs (HealthChecker trait, TcpHealthChecker, HealthChanged event, promote gate, recheck 10s, reset điểm spawn + 4 tests)
-- src-tauri/src/state.rs (forward tunnel://health-changed)
-- src/lib/api.ts (subscribe health-changed; khôi phục exports mất do edit hỏng)
-- src/lib/types.ts (thêm healthChanged variant; vá block trùng do edit hỏng)
+- src-tauri/Cargo.toml (tauri feature tray-icon)
+- src-tauri/Cargo.lock (tray-icon deps)
+- src-tauri/src/tray.rs (mới: menu Show/Start all/Stop all/Quit, close-to-tray, running count, icon bundle)
+- src-tauri/src/lib.rs (mod tray, setup build tray, on_window_event)
+- src-tauri/src/state.rs (tick gọi tray::update_count)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 10)
+## Checks (commit 11)
 
-- `cargo test -p tnls-core`: OK, 38 passed / 0 failed (31 cũ + 3 health + 4 manager-health).
-- `cargo clippy --workspace --all-targets`: OK, không warning.
+- `cargo check --workspace` (gnu): OK.
+- `cargo check --workspace` (msvc): OK, 3m20s.
+- `cargo test -p tnls-core`: OK, 38 passed / 0 failed.
+- `cargo clippy --workspace --all-targets`: OK.
 - `cargo fmt -- --check`: OK.
-- `cargo check --workspace`: OK.
-- `npx tsc --noEmit` + `npm run build`: OK (sau khi khôi phục api exports).
-- Visual (mock IPC): Running + Degraded render đúng badge, Stop/Restart/Edit/Logs/Delete đầy đủ.
 
 ## Known issues
 
 - Test binary của crate Tauri trên Windows-gnu lỗi STATUS_ENTRYPOINT_NOT_FOUND → test chạy trên tnls-core.
-- Health dial chặn tối đa 200ms trên supervisor thread 250ms — chấp nhận được ở MVP (1 dial/tunnel/tick).
-- Edit tool nhiều lần cắt hỏng file (start/stop signature, api exports, types trùng) — đã vá + verify bằng build/test sau mỗi lần.
-- Chưa system tray (commit 11).
+- `cargo build` full app trên gnu fail ở linker MinGW (.drectve corrupt) — giới hạn toolchain, không phải code; check pass cả gnu + msvc. Cần MSVC Build Tools để link binary cuối.
+- Không có WebView2 test runtime ở đây nên tray chỉ verify compile; hành vi click/menu cần chạy `tauri dev` trên máy có WebView2.
 
 ## Next
 
-- Commit 11: system tray + shutdown (tray menu, graceful stop, close-to-tray).
+- Commit 12: tests + CI (GitHub Actions: core tests, clippy, fmt, frontend build).

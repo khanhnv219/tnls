@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod state;
+pub mod tray;
 pub use tnls_core::tunnel;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -14,8 +15,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             state::init(app.handle())
-                .map_err(|e| Box::new(std::io::Error::other(e)) as Box<dyn std::error::Error>)
+                .map_err(|e| Box::new(std::io::Error::other(e)) as Box<dyn std::error::Error>)?;
+            tray::build(app.handle()).map_err(|e| {
+                Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+            })
         })
+        .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::list_tunnels,
             commands::create_tunnel,

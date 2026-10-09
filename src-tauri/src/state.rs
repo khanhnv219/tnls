@@ -65,6 +65,7 @@ impl AppState {
             };
             let _ = app.emit(topic, &event);
         }
+        crate::tray::update_count(app);
     }
 }
 
