@@ -61,6 +61,7 @@ impl AppState {
                 ManagerEventKind::RetryScheduled { .. } => "tunnel://retry-scheduled",
                 ManagerEventKind::Failed { .. } => "tunnel://failed",
                 ManagerEventKind::Stopped => "tunnel://stopped",
+                ManagerEventKind::HealthChanged { .. } => "tunnel://health-changed",
             };
             let _ = app.emit(topic, &event);
         }

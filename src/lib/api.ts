@@ -55,6 +55,7 @@ const EVENT_TOPICS = [
   "tunnel://retry-scheduled",
   "tunnel://failed",
   "tunnel://stopped",
+  "tunnel://health-changed",
 ] as const;
 
 /** Subscribe to all tunnel lifecycle events; returns an unsubscribe fn. */

@@ -52,7 +52,8 @@ export type ManagerEventKind =
   | { type: "stateChanged"; state: TunnelState }
   | { type: "retryScheduled"; attempt: number; delaySecs: number }
   | { type: "failed"; error: string }
-  | { type: "stopped" };
+  | { type: "stopped" }
+  | { type: "healthChanged"; healthy: boolean };
 
 export interface ManagerEvent {
   id: string;

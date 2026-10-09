@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::health::{self, HEALTH_TIMEOUT};
 use crate::ssh::{self, SshChild, STARTUP_GRACE_MS};
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelState, TunnelStatus};
 
@@ -48,6 +49,20 @@ pub trait ManagedChild: Send {
     fn reap(&mut self, tail: usize) -> (Option<i32>, Vec<String>);
     /// Non-blocking drain of stderr lines received so far.
     fn drain_stderr(&mut self) -> Vec<String>;
+}
+/// Decides whether a local endpoint currently accepts TCP connections.
+/// Production dials for real; tests inject scripted answers.
+pub trait HealthChecker: Send {
+    fn check(&mut self, endpoint: &str) -> bool;
+}
+
+/// Production checker: real TCP dial with a short timeout.
+pub struct TcpHealthChecker;
+
+impl HealthChecker for TcpHealthChecker {
+    fn check(&mut self, endpoint: &str) -> bool {
+        health::tcp_check(endpoint, HEALTH_TIMEOUT)
+    }
 }
 
 /// Something that can launch a tunnel child process.
@@ -126,6 +141,7 @@ pub enum ManagerEventKind {
     RetryScheduled { attempt: u32, delay_secs: u64 },
     Failed { error: String },
     Stopped,
+    HealthChanged { healthy: bool },
 }
 
 struct Runtime {
@@ -137,6 +153,9 @@ struct Runtime {
     incarnation_started: Option<Instant>,
     stop_requested: bool,
     next_retry_at: Option<Instant>,
+    /// Last TCP health result; None = not yet checked this incarnation.
+    last_healthy: Option<bool>,
+    last_health_check: Option<Instant>,
 }
 
 impl Runtime {
@@ -156,6 +175,8 @@ impl Runtime {
             incarnation_started: None,
             stop_requested: false,
             next_retry_at: None,
+            last_healthy: None,
+            last_health_check: None,
         }
     }
 
@@ -172,25 +193,39 @@ impl Runtime {
 /// Supervisor for all tunnel processes.
 pub struct TunnelManager<S: Spawner = SshSpawner> {
     spawner: S,
+    checker: Box<dyn HealthChecker>,
     configs: HashMap<String, TunnelConfig>,
     runtimes: HashMap<String, Runtime>,
     events: VecDeque<ManagerEvent>,
     retry_delays: Vec<Duration>,
     max_retries: u32,
     startup_grace: Duration,
+    health_interval: Duration,
 }
 
 impl<S: Spawner> TunnelManager<S> {
     pub fn new(spawner: S) -> Self {
         Self {
             spawner,
+            checker: Box::new(TcpHealthChecker),
             configs: HashMap::new(),
             runtimes: HashMap::new(),
             events: VecDeque::new(),
             retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
             max_retries: DEFAULT_MAX_RETRIES,
             startup_grace: Duration::from_millis(STARTUP_GRACE_MS),
+            health_interval: Duration::from_secs(10),
         }
+    }
+
+    /// Override the TCP dial (tests inject scripted answers).
+    pub fn set_health_checker(&mut self, checker: Box<dyn HealthChecker>) {
+        self.checker = checker;
+    }
+
+    /// How often a Running tunnel is re-dialed.
+    pub fn set_health_interval(&mut self, interval: Duration) {
+        self.health_interval = interval;
     }
 
     /// Override retry schedule (tests use `[ZERO]` for instant retries).
@@ -221,8 +256,43 @@ impl<S: Spawner> TunnelManager<S> {
         self.emit(id, ManagerEventKind::StateChanged(state));
     }
 
-    /// Add or replace a profile. Takes effect on next start; returns whether
-    /// the tunnel is currently running (caller may restart to apply).
+    /// Re-dial a Running/Degraded tunnel at most every `health_interval`.
+    /// On change, transition state + emit both StateChanged and
+    /// HealthChanged so the UI updates either way it listens.
+    fn maybe_recheck_health(&mut self, id: &str, now: Instant) {
+        let due = {
+            let rt = &self.runtimes[id];
+            rt.last_health_check
+                .is_none_or(|t| now - t >= self.health_interval)
+        };
+        if !due {
+            return;
+        }
+        let endpoint = match self.configs.get(id) {
+            Some(c) => c.local_endpoint(),
+            None => return,
+        };
+        let healthy = self.checker.check(&endpoint);
+        let changed = {
+            let rt = self.runtimes.get_mut(id).expect("runtime exists");
+            rt.last_health_check = Some(now);
+            let changed = rt.last_healthy != Some(healthy);
+            rt.last_healthy = Some(healthy);
+            changed
+        };
+        if !changed {
+            return;
+        }
+        let state = self.runtimes[id].status.state;
+        if healthy && state == TunnelState::Degraded {
+            self.set_state(id, TunnelState::Running);
+            self.emit(id, ManagerEventKind::HealthChanged { healthy: true });
+        } else if !healthy && state == TunnelState::Running {
+            self.set_state(id, TunnelState::Degraded);
+            self.emit(id, ManagerEventKind::HealthChanged { healthy: false });
+        }
+    }
+
     pub fn upsert_config(&mut self, config: TunnelConfig) -> bool {
         config
             .validate()
@@ -278,6 +348,8 @@ impl<S: Spawner> TunnelManager<S> {
                 .or_insert_with(|| Runtime::fresh(id));
             rt.push_logs(tail);
             rt.incarnation_started = Some(Instant::now());
+            rt.last_healthy = None;
+            rt.last_health_check = None;
             self.handle_failure(id, Instant::now(), err.clone());
             return Err(err);
         }
@@ -290,6 +362,8 @@ impl<S: Spawner> TunnelManager<S> {
         rt.child = Some(child);
         rt.incarnation_lines.clear();
         rt.incarnation_started = Some(Instant::now());
+        rt.last_healthy = None;
+        rt.last_health_check = None;
         rt.stop_requested = false;
         rt.next_retry_at = None;
         rt.status.state = TunnelState::Starting;
@@ -383,7 +457,8 @@ impl<S: Spawner> TunnelManager<S> {
                     rt.child = Some(child);
                     rt.incarnation_lines.clear();
                     rt.incarnation_started = Some(now);
-                    rt.next_retry_at = None;
+                    rt.last_healthy = None;
+                    rt.last_health_check = None;
                     rt.status.state = TunnelState::Starting;
                     rt.status.pid = Some(pid);
                     rt.status.started_at = Some(Utc::now());
@@ -427,15 +502,24 @@ impl<S: Spawner> TunnelManager<S> {
                     self.fail_now(&id, err);
                 }
                 Ok(true) => {
-                    let promote = {
+                    let past_grace = {
                         let rt = &self.runtimes[&id];
-                        rt.status.state == TunnelState::Starting
-                            && rt
-                                .incarnation_started
-                                .is_some_and(|t| now - t >= self.startup_grace)
+                        rt.incarnation_started
+                            .is_some_and(|t| now - t >= self.startup_grace)
                     };
-                    if promote {
-                        self.set_state(&id, TunnelState::Running);
+                    let state = self.runtimes[&id].status.state;
+                    if state == TunnelState::Starting && past_grace {
+                        let endpoint = self.configs.get(&id).map(|c| c.local_endpoint());
+                        let healthy = endpoint.is_some_and(|e| self.checker.check(&e));
+                        self.runtimes.get_mut(&id).expect("filtered").last_healthy = Some(healthy);
+                        if healthy {
+                            self.set_state(&id, TunnelState::Running);
+                        } else {
+                            self.set_state(&id, TunnelState::Degraded);
+                            self.emit(&id, ManagerEventKind::HealthChanged { healthy: false });
+                        }
+                    } else if state == TunnelState::Running || state == TunnelState::Degraded {
+                        self.maybe_recheck_health(&id, now);
                     }
                 }
                 Ok(false) => {
@@ -662,10 +746,31 @@ mod tests {
         }
     }
 
+    /// Scripted dial answers, consumed in order; repeats the last one.
+    struct ScriptedHealth {
+        answers: Vec<bool>,
+    }
+
+    impl HealthChecker for ScriptedHealth {
+        fn check(&mut self, _endpoint: &str) -> bool {
+            if self.answers.len() > 1 {
+                self.answers.remove(0)
+            } else {
+                self.answers[0]
+            }
+        }
+    }
+
     fn manager() -> TunnelManager<FakeSpawner> {
+        manager_with_health(vec![true])
+    }
+
+    fn manager_with_health(answers: Vec<bool>) -> TunnelManager<FakeSpawner> {
         let mut m = TunnelManager::new(FakeSpawner::ok());
         m.set_startup_grace(Duration::ZERO);
         m.set_retry_delays(vec![Duration::ZERO]);
+        m.set_health_checker(Box::new(ScriptedHealth { answers }));
+        m.set_health_interval(Duration::ZERO);
         m
     }
 
@@ -853,5 +958,64 @@ mod tests {
         let second_pid = m.status("r").unwrap().pid;
         assert_eq!(m.status("r").unwrap().state, TunnelState::Running);
         assert_ne!(first_pid, second_pid);
+    }
+
+    #[test]
+    fn unhealthy_promote_goes_degraded() {
+        let mut m = manager_with_health(vec![false]);
+        m.upsert_config(local_config("deg", 54401));
+        m.start("deg").unwrap();
+        m.poll(Instant::now());
+        assert_eq!(m.status("deg").unwrap().state, TunnelState::Degraded);
+        let events = m.drain_events();
+        assert!(events
+            .iter()
+            .any(|e| matches!(e.kind, ManagerEventKind::HealthChanged { healthy: false })));
+    }
+
+    #[test]
+    fn degraded_recovers_to_running() {
+        let mut m = manager_with_health(vec![false, true]);
+        m.upsert_config(local_config("rec", 54402));
+        m.start("rec").unwrap();
+        m.poll(Instant::now());
+        assert_eq!(m.status("rec").unwrap().state, TunnelState::Degraded);
+        m.poll(Instant::now());
+        assert_eq!(m.status("rec").unwrap().state, TunnelState::Running);
+    }
+
+    #[test]
+    fn running_degrades_when_dial_fails() {
+        let mut m = manager_with_health(vec![true, false]);
+        m.upsert_config(local_config("wd", 54403));
+        m.start("wd").unwrap();
+        m.poll(Instant::now());
+        assert_eq!(m.status("wd").unwrap().state, TunnelState::Running);
+        m.poll(Instant::now());
+        assert_eq!(m.status("wd").unwrap().state, TunnelState::Degraded);
+    }
+
+    #[test]
+    fn throttles_rechecks_within_interval() {
+        struct Counting {
+            calls: usize,
+        }
+        impl HealthChecker for Counting {
+            fn check(&mut self, _endpoint: &str) -> bool {
+                self.calls += 1;
+                true
+            }
+        }
+        let mut m = TunnelManager::new(FakeSpawner::ok());
+        m.set_startup_grace(Duration::ZERO);
+        m.set_health_checker(Box::new(Counting { calls: 0 }));
+        m.set_health_interval(Duration::from_secs(3600));
+        m.upsert_config(local_config("th", 54404));
+        m.start("th").unwrap();
+        m.poll(Instant::now());
+        m.poll(Instant::now());
+        m.poll(Instant::now());
+        // 1 promote dial + 1 interval recheck; throttled afterwards.
+        assert_eq!(m.status("th").unwrap().state, TunnelState::Running);
     }
 }
