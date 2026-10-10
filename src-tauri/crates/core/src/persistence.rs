@@ -1,6 +1,6 @@
 //! SQLite persistence for tunnel profiles.
 //!
-//! Single `tunnels` table, `user_version = 1`. Rows map 1:1 to
+//! Single `tunnels` table, `user_version = 2`. Rows map 1:1 to
 //! [`TunnelConfig`](crate::tunnel::TunnelConfig); validation runs on every
 //! read so corrupt rows surface as [`TunnelError::Storage`] instead of
 //! silently producing invalid configs.
@@ -64,7 +64,20 @@ fn migrate(conn: &Connection) -> Result<(), TunnelError> {
             .map_err(|e| TunnelError::Storage(format!("apply schema v1: {e}")))?;
         conn.execute_batch("PRAGMA user_version = 1")
             .map_err(|e| TunnelError::Storage(format!("stamp user_version: {e}")))?;
-    } else if version != 1 {
+    }
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| TunnelError::Storage(format!("read user_version: {e}")))?;
+    if version == 1 {
+        conn.execute_batch("ALTER TABLE tunnels ADD COLUMN proxy_jump TEXT;")
+            .map_err(|e| TunnelError::Storage(format!("migrate to v2 proxy_jump: {e}")))?;
+        conn.execute_batch("PRAGMA user_version = 2")
+            .map_err(|e| TunnelError::Storage(format!("stamp user_version v2: {e}")))?;
+    }
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| TunnelError::Storage(format!("read user_version: {e}")))?;
+    if version != 2 {
         return Err(TunnelError::Storage(format!(
             "unsupported database version: {version}"
         )));
@@ -94,6 +107,7 @@ fn row_to_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<TunnelConfig> {
         remote_host: row.get(6)?,
         remote_port: row.get::<_, Option<i64>>(7)?.map(|p| p as u16),
         identity_file: row.get(8)?,
+        proxy_jump: row.get(13)?,
         auto_start: row.get::<_, i64>(9)? != 0,
         keep_alive_interval: row.get::<_, i64>(10)? as u64,
         created_at: parse_rfc3339(created_str).map_err(|e| {
@@ -110,9 +124,9 @@ pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, Tun
     let config = input.into_config()?;
     conn.execute(
         "INSERT INTO tunnels (id, name, mode, ssh_target, bind_address, local_port,
-            remote_host, remote_port, identity_file, auto_start, keep_alive_interval,
+            remote_host, remote_port, identity_file, proxy_jump, auto_start, keep_alive_interval,
             created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             config.id,
             config.name,
@@ -123,6 +137,7 @@ pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, Tun
             config.remote_host,
             config.remote_port.map(|p| p as i64),
             config.identity_file,
+            config.proxy_jump,
             i64::from(config.auto_start),
             config.keep_alive_interval as i64,
             config.created_at.to_rfc3339(),
@@ -176,8 +191,8 @@ pub fn update(
         .execute(
             "UPDATE tunnels SET name=?1, mode=?2, ssh_target=?3, bind_address=?4,
                 local_port=?5, remote_host=?6, remote_port=?7, identity_file=?8,
-                auto_start=?9, keep_alive_interval=?10, updated_at=?11
-             WHERE id=?12",
+                proxy_jump=?9, auto_start=?10, keep_alive_interval=?11, updated_at=?12
+             WHERE id=?13",
             params![
                 current.name,
                 current.mode.as_str(),
@@ -187,6 +202,7 @@ pub fn update(
                 current.remote_host,
                 current.remote_port.map(|p| p as i64),
                 current.identity_file,
+                current.proxy_jump,
                 i64::from(current.auto_start),
                 current.keep_alive_interval as i64,
                 current.updated_at.to_rfc3339(),
@@ -243,6 +259,7 @@ mod tests {
             remote_host: Some("postgres.internal".to_owned()),
             remote_port: Some(5432),
             identity_file: None,
+            proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
         }
@@ -322,7 +339,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 
     #[test]
@@ -334,5 +351,16 @@ mod tests {
         assert_eq!(list(&conn).unwrap().len(), 1);
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn proxy_jump_roundtrip() {
+        let conn = open_memory().unwrap();
+        let mut input = local_input("jumped");
+        input.proxy_jump = Some("jump-host".into());
+        let created = create(&conn, input).unwrap();
+        assert_eq!(created.proxy_jump.as_deref(), Some("jump-host"));
+        let fetched = get(&conn, &created.id).unwrap();
+        assert_eq!(fetched.proxy_jump.as_deref(), Some("jump-host"));
     }
 }

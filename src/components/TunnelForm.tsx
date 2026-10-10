@@ -48,11 +48,11 @@ export function TunnelForm({
     seed?.remotePort != null ? String(seed.remotePort) : "",
   );
   const [identityFile, setIdentityFile] = useState(seed?.identityFile ?? "");
+  const [proxyJump, setProxyJump] = useState(seed?.proxyJump ?? "");
   const [autoStart, setAutoStart] = useState(seed?.autoStart ?? false);
   const [keepAlive, setKeepAlive] = useState(
     seed?.keepAliveInterval != null ? String(seed.keepAliveInterval) : "30",
   );
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const needsRemote = mode === "local" || mode === "remote";
 
@@ -85,6 +85,7 @@ export function TunnelForm({
       remoteHost: needsRemote ? remoteHost.trim() : null,
       remotePort: needsRemote ? (parsePort(remotePort) as number) : null,
       identityFile: identityFile.trim() === "" ? null : identityFile.trim(),
+      proxyJump: proxyJump.trim() === "" ? null : proxyJump.trim(),
       autoStart,
       keepAliveInterval: keep as number,
     });
@@ -201,6 +202,15 @@ export function TunnelForm({
               value={identityFile}
               onChange={(e) => setIdentityFile(e.target.value)}
               placeholder="~/.ssh/id_ed25519"
+            />
+          </label>
+
+          <label>
+            Jump host (ProxyJump, optional)
+            <input
+              value={proxyJump}
+              onChange={(e) => setProxyJump(e.target.value)}
+              placeholder="jump-bastion or user@jump:2222"
             />
           </label>
 

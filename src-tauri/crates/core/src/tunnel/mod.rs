@@ -91,6 +91,8 @@ pub struct TunnelConfig {
     /// Destination port (local/remote modes).
     pub remote_port: Option<u16>,
     pub identity_file: Option<String>,
+    /// Optional SSH jump host (`-J` aka ProxyJump), e.g. "bastion" or "user@jump:2222".
+    pub proxy_jump: Option<String>,
     pub auto_start: bool,
     /// `ServerAliveInterval` seconds.
     pub keep_alive_interval: u64,
@@ -110,10 +112,10 @@ pub struct TunnelInput {
     pub remote_host: Option<String>,
     pub remote_port: Option<u16>,
     pub identity_file: Option<String>,
+    pub proxy_jump: Option<String>,
     pub auto_start: Option<bool>,
     pub keep_alive_interval: Option<u64>,
 }
-
 impl TunnelInput {
     /// Fill defaults, assign id + timestamps, then validate.
     pub fn into_config(self) -> Result<TunnelConfig, TunnelError> {
@@ -136,6 +138,10 @@ impl TunnelInput {
             remote_port: self.remote_port,
             identity_file: self
                 .identity_file
+                .map(|p| p.trim().to_owned())
+                .filter(|p| !p.is_empty()),
+            proxy_jump: self
+                .proxy_jump
                 .map(|p| p.trim().to_owned())
                 .filter(|p| !p.is_empty()),
             auto_start: self.auto_start.unwrap_or(false),
@@ -182,11 +188,13 @@ impl TunnelConfig {
     }
 
     /// `bind:port` used for conflict detection and health checks.
+    /// For `remote` the local endpoint is still the *target* on this side,
+    /// so binding checks still apply locally (prevents accidental overlap).
     pub fn local_endpoint(&self) -> String {
         format!("{}:{}", self.bind_address, self.local_port)
     }
 
-    /// `-L bind:local:host:port` / `-R port:host:port` / `-D bind:port`.
+    /// `-L bind:local:host:port` / `-R bind:port:host:port` / `-D bind:port`.
     pub fn forward_spec(&self) -> Result<String, TunnelError> {
         match self.mode {
             TunnelMode::Local => {
@@ -212,7 +220,11 @@ impl TunnelConfig {
                 if port == 0 {
                     return Err(TunnelError::InvalidPort("remotePort".to_owned()));
                 }
-                Ok(format!("{}:{}:{}", port, host, self.local_port))
+                // Remote: remote side listens at bind:port, forwards to host:local_port.
+                Ok(format!(
+                    "{}:{}:{}:{}",
+                    self.bind_address, port, host, self.local_port
+                ))
             }
             TunnelMode::Dynamic => Ok(format!("{}:{}", self.bind_address, self.local_port)),
         }
@@ -229,8 +241,6 @@ impl TunnelConfig {
         Ok(())
     }
 }
-
-/// Point-in-time runtime view sent to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelStatus {
@@ -278,7 +288,6 @@ pub enum TunnelError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     fn local_input() -> TunnelInput {
         TunnelInput {
             name: "db".to_owned(),
@@ -289,6 +298,7 @@ mod tests {
             remote_host: Some("postgres.internal".to_owned()),
             remote_port: Some(5432),
             identity_file: None,
+            proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
         }

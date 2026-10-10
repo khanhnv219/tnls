@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (polish 4: extra polish)
-Status: Polish thêm xong — chờ verify cuối
-Current phase: Polish thêm (3/3 features done, verifying)
+Last updated: 2026-10-10 (Phase 2: ProxyJump + remote port fix)
+Status: Phase 2 model done — verify xong, chuẩn bị import/export
+Current phase: Phase 2 (2/6 features)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -38,6 +38,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 15 | polish: desktop notification | fail/retry/health/recovered notifies | DONE |
 | 16 | polish: start on login toggle | autostart plugin + header checkbox | DONE |
 | 17 | polish: extra (copy/uptime/logs/bulk/shortcuts) | polish thêm batch | DONE |
+| 18 | Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
 
 ## Completed
 
@@ -50,29 +51,29 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
 - [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
 - [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
-- [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
-- [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
 - [2026-10-09] Polish: search/filter + duplicate tunnel (commit 14).
 - [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 15).
 - [2026-10-10] Polish: start on login toggle (commit 16).
 - [2026-10-10] Polish thêm: copy/uptime/live logs/bulk/shortcuts/onboarding (commit 17).
+- [2026-10-10] Phase 2: ProxyJump + remote port fix (commit 18).
 
-## Changed files (commit 17)
+## Changed files (commit 18)
 
-- src/components/TunnelList.tsx (copyable endpoints, uptime, 1s tick, empty onboarding)
-- src/components/LogDrawer.tsx (live toggle + 2s poll, auto-scroll, refresh)
-- src/App.tsx (searchRef, Esc/ / /Ctrl+N shortcuts, clear search, bulk start/stop visible)
-- src/App.css (bulk-actions, kbd-hint, copyable, copied-hint)
+- src-tauri/crates/core/src/tunnel/mod.rs (proxyJump field, remote forwardSpec `bind:port:host:localPort`, re-add apply_update)
+- src-tauri/crates/core/src/persistence.rs (DB v2 migration proxy_jump, row_to_config, create/update)
+- src-tauri/crates/core/src/ssh.rs (ssh -J proxyJump)
+- src-tauri/crates/core/src/manager.rs (health skip for remote)
+- src/components/TunnelForm.tsx (Jump host field)
+- src/lib/types.ts (proxyJump)
+- src/App.tsx (copy proxyJump in duplicate)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 17)
+## Checks (commit 18)
 
-- `cargo test -p tnls-core`: OK, 38 passed / 0 failed.
-- `cargo check --workspace`: OK.
-- `cargo clippy --workspace --all-targets`: OK, 0 warnings.
+- `cargo test -p tnls-core`: OK, 39 passed / 0 failed (+proxy_jump test).
+- `cargo clippy -p tnls-core -- -D warnings`: OK.
 - `cargo fmt -- --check`: OK.
-- `npx tsc --noEmit`: OK.
-- `npm run build`: OK.
+- `npx tsc --noEmit`: OK (proxyJump in TunnelConfig/Input).
 
 ## Known issues
 
@@ -81,4 +82,4 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Next
 
-- Verify cuối: `npm run tauri dev` + tạo/dupe/start/search/tray/autostart/bulk/copy/logs end-to-end (chờ đóng dev server để commit).
+- Phase 2 next: Import/Export profiles (JSON) + Import ~/.ssh/config.

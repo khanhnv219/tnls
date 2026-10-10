@@ -88,6 +88,14 @@ pub fn build_argv(config: &TunnelConfig) -> Result<Vec<OsString>, TunnelError> {
         "-o".into(),
         format!("ServerAliveCountMax={DEFAULT_ALIVE_COUNT_MAX}").into(),
     ];
+    if let Some(jump) = config
+        .proxy_jump
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        argv.push("-J".into());
+        argv.push(jump.trim().to_owned().into());
+    }
     argv.push(flag.into());
     argv.push(forward.into());
     if let Some(key) = config.identity_file.as_deref() {
@@ -228,6 +236,7 @@ mod tests {
             remote_host: Some("postgres.internal".to_owned()),
             remote_port: Some(5432),
             identity_file: Some("~/.ssh/id_ed25519".to_owned()),
+            proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
         }

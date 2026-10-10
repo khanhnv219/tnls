@@ -19,6 +19,7 @@ export interface TunnelConfig {
   remoteHost?: string | null;
   remotePort?: number | null;
   identityFile?: string | null;
+  proxyJump?: string | null;
   autoStart: boolean;
   keepAliveInterval: number;
   createdAt: string;
@@ -34,6 +35,7 @@ export interface TunnelInput {
   remoteHost?: string | null;
   remotePort?: number | null;
   identityFile?: string | null;
+  proxyJump?: string | null;
   autoStart?: boolean | null;
   keepAliveInterval?: number | null;
 }

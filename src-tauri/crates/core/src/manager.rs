@@ -509,17 +509,28 @@ impl<S: Spawner> TunnelManager<S> {
                     };
                     let state = self.runtimes[&id].status.state;
                     if state == TunnelState::Starting && past_grace {
-                        let endpoint = self.configs.get(&id).map(|c| c.local_endpoint());
-                        let healthy = endpoint.is_some_and(|e| self.checker.check(&e));
-                        self.runtimes.get_mut(&id).expect("filtered").last_healthy = Some(healthy);
-                        if healthy {
+                        let config = self.configs.get(&id).expect("has config");
+                        // Remote forwarding has no local listening socket to probe;
+                        // process-alive is the only meaningful health signal.
+                        if config.mode == crate::tunnel::TunnelMode::Remote {
                             self.set_state(&id, TunnelState::Running);
                         } else {
-                            self.set_state(&id, TunnelState::Degraded);
-                            self.emit(&id, ManagerEventKind::HealthChanged { healthy: false });
+                            let endpoint = config.local_endpoint();
+                            let healthy = self.checker.check(&endpoint);
+                            self.runtimes.get_mut(&id).expect("filtered").last_healthy = Some(healthy);
+                            if healthy {
+                                self.set_state(&id, TunnelState::Running);
+                            } else {
+                                self.set_state(&id, TunnelState::Degraded);
+                                self.emit(&id, ManagerEventKind::HealthChanged { healthy: false });
+                            }
                         }
                     } else if state == TunnelState::Running || state == TunnelState::Degraded {
-                        self.maybe_recheck_health(&id, now);
+                        // Only re-check health for local/dynamic.
+                        let is_remote = self.configs.get(&id).is_some_and(|c| c.mode == crate::tunnel::TunnelMode::Remote);
+                        if !is_remote {
+                            self.maybe_recheck_health(&id, now);
+                        }
                     }
                 }
                 Ok(false) => {
@@ -663,6 +674,7 @@ mod tests {
             remote_host: Some("db.internal".to_owned()),
             remote_port: Some(5432),
             identity_file: None,
+            proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
         }

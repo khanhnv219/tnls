@@ -202,6 +202,7 @@ export default function App() {
       remoteHost: row.remoteHost,
       remotePort: row.remotePort,
       identityFile: row.identityFile,
+      proxyJump: row.proxyJump,
       autoStart: false,
       keepAliveInterval: row.keepAliveInterval,
     });
