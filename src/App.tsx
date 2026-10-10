@@ -61,6 +61,7 @@ async function refresh(
     setLoadError(`Failed to load tunnels: ${String(e)}`);
   }
 }
+
 export default function App() {
   const [rows, setRows] = useState<TunnelRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -82,7 +83,6 @@ export default function App() {
     void ensureNotificationPermission();
     let unsubscribe: (() => void) | undefined;
     onTunnelEvent((event) => {
-      // Notify before refetch (lookup needs current rows).
       setRows((current) => {
         const lookup = (id: string) =>
           current.find((r) => r.id === id)?.name ?? id;
@@ -105,6 +105,34 @@ export default function App() {
       .then(setAutostart)
       .catch(() => setAutostart(null));
   }, []);
+
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const inField = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      if (e.key === "/" && !inField) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape") {
+        if (formTarget !== undefined || logTarget) {
+          setDraft(null);
+          setFormTarget(undefined);
+          setLogTarget(null);
+        } else if (query) {
+          setQuery("");
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setDraft(null);
+        setSaveError(null);
+        setFormTarget(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [query, formTarget, logTarget]);
 
   const runAction = useCallback(
     async (id: string, action: (id: string) => Promise<unknown>) => {
@@ -165,8 +193,6 @@ export default function App() {
 
   const handleDuplicate = useCallback((row: TunnelRow) => {
     setSaveError(null);
-    // Prefill a *creation* form from an existing row: same settings,
-    // new name; handleSave creates because formTarget stays null.
     setDraft({
       name: `${row.name} (copy)`,
       mode: row.mode,
@@ -181,6 +207,29 @@ export default function App() {
     });
     setFormTarget(null);
   }, []);
+
+  const handleBulk = useCallback(
+    async (action: (id: string) => Promise<unknown>) => {
+      const ids = visibleRows.map((r) => r.id);
+      for (const id of ids) {
+        setPending((p) => ({ ...p, [id]: true }));
+      }
+      setActionError(null);
+      for (const id of ids) {
+        try {
+          await action(id);
+        } catch (e) {
+          setActionError(String(e));
+        }
+      }
+      for (const id of ids) {
+        setPending((p) => ({ ...p, [id]: false }));
+      }
+      refresh(setRows, setLoadError);
+    },
+    [visibleRows],
+  );
+
   return (
     <main className="app">
       <header className="topbar">
@@ -193,12 +242,18 @@ export default function App() {
         </div>
         <div className="top-actions">
           <input
+            ref={searchRef}
             className="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, host, port…"
+            placeholder="Search name, host, port… (/ to focus)"
             aria-label="Search tunnels"
           />
+          {query && (
+            <button className="ghost" onClick={() => setQuery("")} title="Clear search">
+              ✕
+            </button>
+          )}
           <button
             className="ghost"
             onClick={() => refresh(setRows, setLoadError)}
@@ -234,6 +289,18 @@ export default function App() {
           />
           Start on login
         </label>
+      )}
+
+      {rows.length > 1 && (
+        <div className="bulk-actions">
+          <button className="ghost" onClick={() => handleBulk(startTunnel)}>
+            Start all visible
+          </button>
+          <button className="ghost" onClick={() => handleBulk(stopTunnel)}>
+            Stop all visible
+          </button>
+          <span className="muted kbd-hint">Tip: / focus · Esc close · Ctrl+N new</span>
+        </div>
       )}
 
       {loadError && (

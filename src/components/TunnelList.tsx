@@ -1,11 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { TunnelRow } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
+
+function formatUptime(startedAt: string | null | undefined, now: number): string | null {
+  if (!startedAt) return null;
+  const start = new Date(startedAt).getTime();
+  if (Number.isNaN(start)) return null;
+  let secs = Math.max(0, Math.floor((now - start) / 1000));
+  const h = Math.floor(secs / 3600);
+  secs %= 3600;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 function remoteLabel(row: TunnelRow): string {
   if (row.mode === "dynamic") return `SOCKS via ${row.sshTarget}`;
   return `${row.remoteHost ?? "?"}:${row.remotePort ?? "?"}`;
 }
+
 const STARTABLE: Record<string, true> = {
   stopped: true,
   failed: true,
@@ -51,11 +66,39 @@ export function TunnelList({
   onShowLogs: (row: TunnelRow) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (copied === null) return;
+    const t = setTimeout(() => setCopied(null), 1400);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   if (rows.length === 0) {
     return (
-      <div className="empty">
-        <p>No tunnels yet. Create one to stop typing ssh commands.</p>
+      <div className="empty" role="status" aria-live="polite">
+        <h3 style={{ margin: "0 0 8px" }}>No tunnels yet</h3>
+        <p style={{ margin: "0 0 14px" }}>
+          Create your first tunnel — it is a typed profile, not a raw shell
+          command. Start with a local forward like
+          {" "}
+          <code>127.0.0.1:5433 → db.internal:5432</code>
+          {" "}
+          via your bastion.
+        </p>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Tip: use an <code>~/.ssh/config</code> alias as SSH target, press
+          {" "}
+          <kbd>/</kbd>
+          {" "}
+          to search, <kbd>Ctrl+N</kbd> for a new tunnel.
+        </p>
       </div>
     );
   }
@@ -82,20 +125,47 @@ export function TunnelList({
         <tbody>
           {rows.map((row) => {
             const busy = pending[row.id] ?? false;
-            const detail =
-              row.status.lastError ??
-              (row.status.pid != null ? `pid ${row.status.pid}` : "—");
+            const local = `${row.bindAddress}:${row.localPort}`;
+            const remote = remoteLabel(row);
+            const uptime = formatUptime(row.status.startedAt, now);
+            const detail = row.status.lastError
+              ? row.status.lastError
+              : row.status.pid != null
+                ? `pid ${row.status.pid}${uptime ? ` · ${uptime}` : ""}`
+                : uptime ?? "—";
             return (
               <tr key={row.id} className={`row-${row.status.state}`}>
                 <td className="name">{row.name}</td>
                 <td>{row.mode}</td>
                 <td>
-                  <code>
-                    {row.bindAddress}:{row.localPort}
+                  <code
+                    className="copyable"
+                    title={copied === local ? "Copied!" : "Click to copy"}
+                    onClick={() => {
+                      navigator.clipboard.writeText(local).then(
+                        () => setCopied(local),
+                        () => setCopied(null),
+                      );
+                    }}
+                  >
+                    {local}
                   </code>
+                  {copied === local && <span className="copied-hint">copied</span>}
                 </td>
                 <td>
-                  <code>{remoteLabel(row)}</code>
+                  <code
+                    className="copyable"
+                    title={copied === remote ? "Copied!" : "Click to copy"}
+                    onClick={() => {
+                      navigator.clipboard.writeText(remote).then(
+                        () => setCopied(remote),
+                        () => setCopied(null),
+                      );
+                    }}
+                  >
+                    {remote}
+                  </code>
+                  {copied === remote && <span className="copied-hint">copied</span>}
                 </td>
                 <td>
                   <StatusBadge state={row.status.state} />
