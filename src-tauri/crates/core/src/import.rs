@@ -219,7 +219,6 @@ fn parse_host_port(spec: &str) -> Option<(String, u16)> {
     }
     Some((host.to_owned(), port))
 }
-
 /// Convert a parsed host into one `TunnelInput` per `LocalForward`.
 pub fn host_to_inputs(host: &HostImport) -> Vec<TunnelInput> {
     host.local_forwards
@@ -236,6 +235,8 @@ pub fn host_to_inputs(host: &HostImport) -> Vec<TunnelInput> {
             proxy_jump: host.proxy_jump.clone(),
             auto_start: Some(false),
             keep_alive_interval: Some(30),
+            max_retries: None,
+            retry_delay_secs: None,
         })
         .collect()
 }
@@ -309,6 +310,8 @@ mod tests {
             proxy_jump: Some("jump".into()),
             auto_start: None,
             keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
         };
         let json = format_json_inputs(std::slice::from_ref(&input));
         let parsed = parse_json_inputs(&json).unwrap();

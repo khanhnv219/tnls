@@ -211,6 +211,8 @@ export default function App() {
       proxyJump: row.proxyJump,
       autoStart: false,
       keepAliveInterval: row.keepAliveInterval,
+      maxRetries: row.maxRetries,
+      retryDelaySecs: row.retryDelaySecs,
     });
     setFormTarget(null);
   }, []);

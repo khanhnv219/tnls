@@ -119,6 +119,8 @@ pub fn export_tunnels_json(state: State<'_, AppState>) -> Result<String, String>
             proxy_jump: c.proxy_jump,
             auto_start: Some(c.auto_start),
             keep_alive_interval: Some(c.keep_alive_interval),
+            max_retries: Some(c.max_retries),
+            retry_delay_secs: Some(c.retry_delay_secs),
         })
         .collect();
     Ok(tnls_core::import::format_json_inputs(&inputs))

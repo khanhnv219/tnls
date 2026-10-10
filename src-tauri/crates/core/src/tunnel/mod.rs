@@ -96,6 +96,10 @@ pub struct TunnelConfig {
     pub auto_start: bool,
     /// `ServerAliveInterval` seconds.
     pub keep_alive_interval: u64,
+    /// Max auto-retry attempts for transient failures.
+    pub max_retries: u32,
+    /// Base retry delay in seconds (backoff doubles, capped at 30s).
+    pub retry_delay_secs: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -115,6 +119,8 @@ pub struct TunnelInput {
     pub proxy_jump: Option<String>,
     pub auto_start: Option<bool>,
     pub keep_alive_interval: Option<u64>,
+    pub max_retries: Option<u32>,
+    pub retry_delay_secs: Option<u64>,
 }
 impl TunnelInput {
     /// Fill defaults, assign id + timestamps, then validate.
@@ -146,6 +152,8 @@ impl TunnelInput {
                 .filter(|p| !p.is_empty()),
             auto_start: self.auto_start.unwrap_or(false),
             keep_alive_interval: self.keep_alive_interval.unwrap_or(30),
+            max_retries: self.max_retries.unwrap_or(5),
+            retry_delay_secs: self.retry_delay_secs.unwrap_or(1),
             created_at: now,
             updated_at: now,
         };
@@ -183,6 +191,12 @@ impl TunnelConfig {
         }
         if self.keep_alive_interval == 0 {
             return Err(TunnelError::InvalidKeepAlive);
+        }
+        if self.max_retries > 20 {
+            return Err(TunnelError::InvalidMaxRetries);
+        }
+        if self.retry_delay_secs == 0 || self.retry_delay_secs > 30 {
+            return Err(TunnelError::InvalidRetryDelay);
         }
         Ok(())
     }
@@ -273,6 +287,10 @@ pub enum TunnelError {
     MissingRemoteHost,
     #[error("invalid keep-alive interval (must be > 0)")]
     InvalidKeepAlive,
+    #[error("invalid max retries (must be 0–20)")]
+    InvalidMaxRetries,
+    #[error("invalid retry delay (must be 1–30 seconds)")]
+    InvalidRetryDelay,
     #[error("invalid tunnel mode: {0}")]
     InvalidMode(String),
     #[error("local endpoint {0} is already in use")]
@@ -301,6 +319,8 @@ mod tests {
             proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
         }
     }
 

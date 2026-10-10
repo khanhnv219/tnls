@@ -22,6 +22,8 @@ export interface TunnelConfig {
   proxyJump?: string | null;
   autoStart: boolean;
   keepAliveInterval: number;
+  maxRetries: number;
+  retryDelaySecs: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +40,8 @@ export interface TunnelInput {
   proxyJump?: string | null;
   autoStart?: boolean | null;
   keepAliveInterval?: number | null;
+  maxRetries?: number | null;
+  retryDelaySecs?: number | null;
 }
 
 export interface TunnelStatus {

@@ -573,8 +573,21 @@ impl<S: Spawner> TunnelManager<S> {
                 .restart_count = 0;
         }
         let attempts = self.runtimes[id].status.restart_count;
-        if is_transient(&err) && attempts < self.max_retries {
-            let delay = self.retry_delays[(attempts as usize).min(self.retry_delays.len() - 1)];
+        // Per-tunnel retry policy overrides global defaults when not in test-zero mode.
+        let use_test_override = self.retry_delays.contains(&Duration::ZERO);
+        let (max_retries, delay) = if use_test_override {
+            let d = self.retry_delays[(attempts as usize).min(self.retry_delays.len() - 1)];
+            (self.max_retries, d)
+        } else if let Some(cfg) = self.configs.get(id) {
+            let base = cfg.retry_delay_secs;
+            let cap = 30u64;
+            let secs = base.saturating_mul(1u64 << attempts).min(cap);
+            (cfg.max_retries, Duration::from_secs(secs))
+        } else {
+            let d = self.retry_delays[(attempts as usize).min(self.retry_delays.len() - 1)];
+            (self.max_retries, d)
+        };
+        if is_transient(&err) && attempts < max_retries {
             let rt = self.runtimes.get_mut(id).expect("runtime exists");
             rt.status.restart_count = attempts + 1;
             rt.next_retry_at = Some(now + delay);
@@ -681,6 +694,8 @@ mod tests {
             proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
         }
         .into_config()
         .unwrap();

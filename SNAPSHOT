@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (Phase 2: OS keychain)
-Status: keychain done — verify xong, chuẩn bị retry policy
-Current phase: Phase 2 (4/6 features)
+Last updated: 2026-10-10 (Phase 2: Retry policy)
+Status: retry policy done — Phase 2 hoàn tất
+Current phase: Phase 2 (6/6 features)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -41,6 +41,8 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 18 | Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
 | 19 | Phase 2: Import/Export + ssh_config | JSON + Host/LocalForward import | DONE |
 | 20 | Phase 2: OS keychain passphrase | keyring service tnls, form save/clear | DONE |
+| 21 | Phase 2: Retry policy UI | per-tunnel maxRetries/delay, persisted | DONE |
+
 ## Completed
 
 - [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
@@ -52,6 +54,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
 - [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
 - [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
+- [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
 - [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
 - [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
 - [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
@@ -61,22 +64,26 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-10] Polish thêm: copy/uptime/live logs/bulk/shortcuts/onboarding (commit 17).
 - [2026-10-10] Phase 2: ProxyJump + remote port fix (commit 18).
 - [2026-10-10] Phase 2: Import/Export + ssh_config (commit 19).
+- [2026-10-10] Phase 2: OS keychain passphrase (commit 20).
+- [2026-10-10] Phase 2: Retry policy UI (commit 21).
 
-## Changed files (commit 19)
+## Changed files (commit 21)
 
-- src-tauri/crates/core/src/import.rs (mới: JSON parse/format, ssh_config parser Host/LocalForward, wildcard skip, 5 tests)
-- src-tauri/crates/core/src/lib.rs (pub mod import)
-- src-tauri/src/commands.rs (+ export_tunnels_json, import_tunnels_json, import_ssh_config)
-- src-tauri/src/lib.rs (register 3 commands)
-- src/App.tsx (import buttons: Export JSON, Import JSON, Import ~/.ssh/config)
-- src/lib/api.ts (exportTunnelsJson, importTunnelsJson, importSshConfig)
+- src-tauri/crates/core/src/tunnel/mod.rs (maxRetries, retryDelaySecs + validate)
+- src-tauri/crates/core/src/persistence.rs (DB v3 migration, row_to_config named cols, create/update)
+- src-tauri/crates/core/src/manager.rs (per-tunnel handle_failure, manual_contains fix)
+- src-tauri/crates/core/src/import.rs (maxRetries/retryDelaySecs in host_to_inputs)
+- src/components/TunnelForm.tsx (retry fields, validation, onSave)
+- src/lib/types.ts (maxRetries, retryDelaySecs)
+- src/App.tsx (copy retry fields in duplicate)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 19)
+## Checks (commit 21)
 
-- `cargo test -p tnls-core`: OK, 44 passed / 0 failed (39 trước + 5 import).
-- `cargo clippy -p tnls-core -- -D warnings`: OK (1 unused_mut fix).
+- `cargo test -p tnls-core`: OK, 47 passed / 0 failed.
+- `cargo clippy -p tnls-core -- -D warnings`: OK.
 - `cargo fmt -- --check`: OK.
+- `cargo check --workspace`: OK.
 - `npx tsc --noEmit`: OK.
 - `npm run build`: OK.
 
@@ -87,4 +94,4 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Next
 
-- Phase 2 next: OS keychain + Retry policy UI.
+- Verify full gates + đóng Phase 2 (final commit).

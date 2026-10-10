@@ -18,6 +18,12 @@ function parsePort(raw: string): number | null {
   return n >= 1 && n <= 65535 ? n : null;
 }
 
+function parseUint(raw: string, max: number): number | null {
+  if (!/^\d+$/.test(raw.trim())) return null;
+  const n = Number(raw.trim());
+  return n >= 0 && n <= max ? n : null;
+}
+
 export function TunnelForm({
   initial,
   draft,
@@ -60,6 +66,30 @@ export function TunnelForm({
   const [keepAlive, setKeepAlive] = useState(
     seed?.keepAliveInterval != null ? String(seed.keepAliveInterval) : "30",
   );
+  const [maxRetries, setMaxRetries] = useState(() => {
+    if (!seed) return "5";
+    if (
+      typeof seed === "object" &&
+      seed !== null &&
+      "maxRetries" in seed &&
+      typeof seed.maxRetries === "number"
+    ) {
+      return String(seed.maxRetries);
+    }
+    return "5";
+  });
+  const [retryDelay, setRetryDelay] = useState(() => {
+    if (!seed) return "1";
+    if (
+      typeof seed === "object" &&
+      seed !== null &&
+      "retryDelaySecs" in seed &&
+      typeof seed.retryDelaySecs === "number"
+    ) {
+      return String(seed.retryDelaySecs);
+    }
+    return "1";
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [passphraseMsg, setPassphraseMsg] = useState<string | null>(null);
 
@@ -89,6 +119,10 @@ export function TunnelForm({
     }
     const keep = parsePort(keepAlive);
     if (keep === null) next.keepAlive = "Keep-alive must be 1–65535 seconds.";
+    const maxR = parseUint(maxRetries, 20);
+    if (maxR === null) next.maxRetries = "Max retries must be 0–20.";
+    const delayR = parseUint(retryDelay, 30);
+    if (delayR === null || delayR < 1) next.retryDelay = "Retry delay must be 1–30 s.";
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -106,6 +140,8 @@ export function TunnelForm({
         proxyJump: proxyJump.trim() === "" ? null : proxyJump.trim(),
         autoStart,
         keepAliveInterval: keep as number,
+        maxRetries: maxR as number,
+        retryDelaySecs: delayR as number,
       });
     } catch {
       return;
@@ -305,6 +341,33 @@ export function TunnelForm({
                 onChange={(e) => setAutoStart(e.target.checked)}
               />
               Auto-start with app
+            </label>
+          </div>
+
+          <div className="form-row">
+            <label>
+              Max retries
+              <input
+                value={maxRetries}
+                onChange={(e) => setMaxRetries(e.target.value)}
+                placeholder="5"
+                inputMode="numeric"
+              />
+              {errors.maxRetries && (
+                <span className="field-error">{errors.maxRetries}</span>
+              )}
+            </label>
+            <label>
+              Retry delay (s)
+              <input
+                value={retryDelay}
+                onChange={(e) => setRetryDelay(e.target.value)}
+                placeholder="1"
+                inputMode="numeric"
+              />
+              {errors.retryDelay && (
+                <span className="field-error">{errors.retryDelay}</span>
+              )}
             </label>
           </div>
 

@@ -239,6 +239,8 @@ mod tests {
             proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
         }
         .into_config()
         .unwrap()

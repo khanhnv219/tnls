@@ -1,6 +1,6 @@
 //! SQLite persistence for tunnel profiles.
 //!
-//! Single `tunnels` table, `user_version = 2`. Rows map 1:1 to
+//! `user_version = 3`. Rows map 1:1 to
 //! [`TunnelConfig`](crate::tunnel::TunnelConfig); validation runs on every
 //! read so corrupt rows surface as [`TunnelError::Storage`] instead of
 //! silently producing invalid configs.
@@ -56,7 +56,7 @@ pub fn open_memory() -> Result<Connection, TunnelError> {
 }
 
 fn migrate(conn: &Connection) -> Result<(), TunnelError> {
-    let version: i64 = conn
+    let mut version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|e| TunnelError::Storage(format!("read user_version: {e}")))?;
     if version == 0 {
@@ -64,27 +64,32 @@ fn migrate(conn: &Connection) -> Result<(), TunnelError> {
             .map_err(|e| TunnelError::Storage(format!("apply schema v1: {e}")))?;
         conn.execute_batch("PRAGMA user_version = 1")
             .map_err(|e| TunnelError::Storage(format!("stamp user_version: {e}")))?;
+        version = 1;
     }
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|e| TunnelError::Storage(format!("read user_version: {e}")))?;
     if version == 1 {
         conn.execute_batch("ALTER TABLE tunnels ADD COLUMN proxy_jump TEXT;")
             .map_err(|e| TunnelError::Storage(format!("migrate to v2 proxy_jump: {e}")))?;
         conn.execute_batch("PRAGMA user_version = 2")
             .map_err(|e| TunnelError::Storage(format!("stamp user_version v2: {e}")))?;
+        version = 2;
     }
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|e| TunnelError::Storage(format!("read user_version: {e}")))?;
-    if version != 2 {
+    if version == 2 {
+        conn.execute_batch(
+            "ALTER TABLE tunnels ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 5; \
+             ALTER TABLE tunnels ADD COLUMN retry_delay_secs INTEGER NOT NULL DEFAULT 1;",
+        )
+        .map_err(|e| TunnelError::Storage(format!("migrate to v3 retry policy: {e}")))?;
+        conn.execute_batch("PRAGMA user_version = 3")
+            .map_err(|e| TunnelError::Storage(format!("stamp user_version v3: {e}")))?;
+        version = 3;
+    }
+    if version != 3 {
         return Err(TunnelError::Storage(format!(
             "unsupported database version: {version}"
         )));
     }
     Ok(())
 }
-
 fn parse_rfc3339(value: String) -> Result<DateTime<Utc>, TunnelError> {
     value
         .parse::<DateTime<Utc>>()
@@ -92,24 +97,26 @@ fn parse_rfc3339(value: String) -> Result<DateTime<Utc>, TunnelError> {
 }
 
 fn row_to_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<TunnelConfig> {
-    let mode_str: String = row.get(2)?;
-    let created_str: String = row.get(11)?;
-    let updated_str: String = row.get(12)?;
+    let mode_str: String = row.get("mode")?;
+    let created_str: String = row.get("created_at")?;
+    let updated_str: String = row.get("updated_at")?;
     Ok(TunnelConfig {
-        id: row.get(0)?,
-        name: row.get(1)?,
+        id: row.get("id")?,
+        name: row.get("name")?,
         mode: TunnelMode::parse(&mode_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        ssh_target: row.get(3)?,
-        bind_address: row.get(4)?,
-        local_port: row.get::<_, i64>(5)? as u16,
-        remote_host: row.get(6)?,
-        remote_port: row.get::<_, Option<i64>>(7)?.map(|p| p as u16),
-        identity_file: row.get(8)?,
-        proxy_jump: row.get(13)?,
-        auto_start: row.get::<_, i64>(9)? != 0,
-        keep_alive_interval: row.get::<_, i64>(10)? as u64,
+        ssh_target: row.get("ssh_target")?,
+        bind_address: row.get("bind_address")?,
+        local_port: row.get::<_, i64>("local_port")? as u16,
+        remote_host: row.get("remote_host")?,
+        remote_port: row.get::<_, Option<i64>>("remote_port")?.map(|p| p as u16),
+        identity_file: row.get("identity_file")?,
+        proxy_jump: row.get("proxy_jump")?,
+        auto_start: row.get::<_, i64>("auto_start")? != 0,
+        keep_alive_interval: row.get::<_, i64>("keep_alive_interval")? as u64,
+        max_retries: row.get::<_, i64>("max_retries")? as u32,
+        retry_delay_secs: row.get::<_, i64>("retry_delay_secs")? as u64,
         created_at: parse_rfc3339(created_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
         })?,
@@ -125,8 +132,8 @@ pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, Tun
     conn.execute(
         "INSERT INTO tunnels (id, name, mode, ssh_target, bind_address, local_port,
             remote_host, remote_port, identity_file, proxy_jump, auto_start, keep_alive_interval,
-            created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            max_retries, retry_delay_secs, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             config.id,
             config.name,
@@ -140,6 +147,8 @@ pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, Tun
             config.proxy_jump,
             i64::from(config.auto_start),
             config.keep_alive_interval as i64,
+            config.max_retries as i64,
+            config.retry_delay_secs as i64,
             config.created_at.to_rfc3339(),
             config.updated_at.to_rfc3339(),
         ],
@@ -191,8 +200,9 @@ pub fn update(
         .execute(
             "UPDATE tunnels SET name=?1, mode=?2, ssh_target=?3, bind_address=?4,
                 local_port=?5, remote_host=?6, remote_port=?7, identity_file=?8,
-                proxy_jump=?9, auto_start=?10, keep_alive_interval=?11, updated_at=?12
-             WHERE id=?13",
+                proxy_jump=?9, auto_start=?10, keep_alive_interval=?11,
+                max_retries=?12, retry_delay_secs=?13, updated_at=?14
+             WHERE id=?15",
             params![
                 current.name,
                 current.mode.as_str(),
@@ -205,6 +215,8 @@ pub fn update(
                 current.proxy_jump,
                 i64::from(current.auto_start),
                 current.keep_alive_interval as i64,
+                current.max_retries as i64,
+                current.retry_delay_secs as i64,
                 current.updated_at.to_rfc3339(),
                 current.id,
             ],
@@ -262,6 +274,8 @@ mod tests {
             proxy_jump: None,
             auto_start: None,
             keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
         }
     }
 
@@ -339,7 +353,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
@@ -362,5 +376,22 @@ mod tests {
         assert_eq!(created.proxy_jump.as_deref(), Some("jump-host"));
         let fetched = get(&conn, &created.id).unwrap();
         assert_eq!(fetched.proxy_jump.as_deref(), Some("jump-host"));
+    }
+
+    #[test]
+    fn retry_policy_roundtrip() {
+        let conn = open_memory().unwrap();
+        let mut input = local_input("retry");
+        input.max_retries = Some(2);
+        input.retry_delay_secs = Some(10);
+        let created = create(&conn, input).unwrap();
+        assert_eq!(created.max_retries, 2);
+        assert_eq!(created.retry_delay_secs, 10);
+        let mut upd = local_input("retry-v2");
+        upd.max_retries = Some(0);
+        upd.retry_delay_secs = Some(5);
+        let updated = update(&conn, &created.id, upd).unwrap();
+        assert_eq!(updated.max_retries, 0);
+        assert_eq!(updated.retry_delay_secs, 5);
     }
 }
