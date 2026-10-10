@@ -118,11 +118,17 @@ impl SshChild {
     pub fn spawn(config: &TunnelConfig) -> Result<(Self, Receiver<String>), TunnelError> {
         let argv = build_argv(config)?;
         let (program, args) = argv.split_first().expect("argv always has program");
-        let mut child = Command::new(program)
-            .args(args)
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            cmd.creation_flags(0x08000000 /* CREATE_NO_WINDOW */);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| TunnelError::SpawnFailed(format!("spawn ssh: {e}")))?;
         let stderr: ChildStderr = child
@@ -309,6 +315,15 @@ mod tests {
         let mut config = local_config();
         config.local_port = 0;
         assert!(build_argv(&config).is_err());
+    }
+
+    #[test]
+    fn proxy_jump_adds_j_flag() {
+        let mut config = local_config();
+        config.proxy_jump = Some("jump-host".into());
+        let args = argv_strings(&config);
+        let idx = args.iter().position(|a| a == "-J").expect("-J present");
+        assert_eq!(args[idx + 1], "jump-host");
     }
 
     #[test]

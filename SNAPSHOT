@@ -1,7 +1,7 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (Phase 2: Retry policy)
-Status: retry policy done — Phase 2 hoàn tất
+Last updated: 2026-10-10 (fix: suppress ssh console window on Windows)
+Status: fix done — Phase 2 hoàn tất, gác Phase 3 (russh)
 Current phase: Phase 2 (6/6 features)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
