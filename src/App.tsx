@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LogDrawer } from "./components/LogDrawer";
 import { TunnelForm } from "./components/TunnelForm";
 import { TunnelList } from "./components/TunnelList";
@@ -13,6 +13,11 @@ import {
   stopTunnel,
   updateTunnel,
 } from "./lib/api";
+import {
+  ensureNotificationPermission,
+  fireNotification,
+  notifyForEvent,
+} from "./lib/notify";
 import type {
   TunnelConfig,
   TunnelInput,
@@ -68,13 +73,26 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const prevStates = useRef<Record<string, string>>({});
 
   useEffect(() => {
     refresh(setRows, setLoadError);
+    void ensureNotificationPermission();
     let unsubscribe: (() => void) | undefined;
-    // Any lifecycle event invalidates the status cache: refetch.
-    // Cheap (local IPC) and always consistent with the supervisor.
-    onTunnelEvent(() => refresh(setRows, setLoadError)).then((fn) => {
+    onTunnelEvent((event) => {
+      // Notify before refetch (lookup needs current rows).
+      setRows((current) => {
+        const lookup = (id: string) =>
+          current.find((r) => r.id === id)?.name ?? id;
+        const note = notifyForEvent(event, lookup, prevStates.current[event.id]);
+        if (note) fireNotification(note.title, note.body);
+        if (event.kind.type === "stateChanged") {
+          prevStates.current[event.id] = event.kind.state;
+        }
+        return current;
+      });
+      refresh(setRows, setLoadError);
+    }).then((fn) => {
       unsubscribe = fn;
     });
     return () => unsubscribe?.();

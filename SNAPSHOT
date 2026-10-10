@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-09 (polish 1: search + duplicate)
-Status: search/filter + duplicate xong — tiếp notification
-Current phase: Polish dùng hàng ngày (1/3 features)
+Last updated: 2026-10-10 (polish 2: desktop notification)
+Status: notification xong — tiếp start on login
+Current phase: Polish dùng hàng ngày (2/3 features)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -35,6 +35,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 12 | test/ci: tests + workflow | unit tests, GitHub Actions | DONE |
 | 13 | feat: auto-start tunnels on launch | load profiles + start flagged ones | DONE |
 | 14 | polish: search + duplicate tunnel | filter list, duplicate prefill form | DONE |
+| 15 | polish: desktop notification | fail/retry/health/recovered notifies | DONE |
 
 ## Completed
 
@@ -52,20 +53,27 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
 - [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
 - [2026-10-09] Polish: search/filter + duplicate tunnel (commit 14).
+- [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 15).
 
-## Changed files (commit 14)
+## Changed files (commit 15)
 
-- src/App.tsx (search query + visibleRows memo, draft state, handleDuplicate, key reset form)
-- src/App.css (input.search min-width)
-- src/components/TunnelList.tsx (nút Duplicate + prop onDuplicate)
-- src/components/TunnelForm.tsx (prop draft, seed mọi field từ draft ?? initial)
+- src-tauri/Cargo.toml (tauri-plugin-notification 2)
+- src-tauri/Cargo.lock (notification deps)
+- src-tauri/capabilities/default.json (notification:default)
+- src-tauri/src/lib.rs (plugin notification init)
+- src/lib/notify.ts (mới: ensurePermission, notifyForEvent, fireNotification)
+- src/App.tsx (prevStates ref, ensurePermission on mount, fire on lifecycle events)
+- package.json / package-lock.json (@tauri-apps/plugin-notification)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 14)
+## Checks (commit 15)
 
 - `npx tsc --noEmit`: OK.
 - `npm run build`: OK.
-- Visual (mock IPC): search "redis" → 1 dòng + "1 of 2 shown"; Duplicate → form prefill "Dev PostgreSQL (copy)" đúng settings.
+- `cargo check --workspace`: OK.
+- `cargo clippy --workspace --all-targets`: OK, 0 warnings.
+- `cargo fmt -- --check`: OK.
+- `cargo test -p tnls-core`: OK, 38 passed / 0 failed.
 
 ## Known issues
 
@@ -74,5 +82,4 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Next
 
-- Polish 2: desktop notification khi fail/reconnect.
 - Polish 3: start on login toggle.
