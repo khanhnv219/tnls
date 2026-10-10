@@ -5,6 +5,7 @@
 //! on some Windows toolchains).
 
 pub mod health;
+pub mod import;
 pub mod manager;
 pub mod persistence;
 pub mod ssh;

@@ -5,7 +5,10 @@ import { TunnelList } from "./components/TunnelList";
 import {
   createTunnel,
   deleteTunnel,
+  exportTunnelsJson,
   getRuntimeStatus,
+  importSshConfig,
+  importTunnelsJson,
   listTunnels,
   onTunnelEvent,
   restartTunnel,
@@ -209,6 +212,42 @@ export default function App() {
     setFormTarget(null);
   }, []);
 
+  const handleExportJson = useCallback(async () => {
+    try {
+      const json = await exportTunnelsJson();
+      await navigator.clipboard.writeText(json);
+      setActionError("Exported JSON to clipboard.");
+      setTimeout(() => setActionError(null), 3000);
+    } catch (e) {
+      setActionError(`Export failed: ${String(e)}`);
+    }
+  }, []);
+
+  const handleImportJson = useCallback(async () => {
+    const json = prompt("Paste tunnels JSON (array of TunnelInput):");
+    if (!json) return;
+    try {
+      const created = await importTunnelsJson(json);
+      setActionError(`Imported ${created.length} tunnel(s).`);
+      refresh(setRows, setLoadError);
+      setTimeout(() => setActionError(null), 4000);
+    } catch (e) {
+      setActionError(`Import failed: ${String(e)}`);
+    }
+  }, []);
+
+  const handleImportSsh = useCallback(async () => {
+    const path = prompt("Path to ssh config (empty = ~/.ssh/config):", "") ?? "";
+    try {
+      const created = await importSshConfig(path.trim() || null);
+      setActionError(`Imported ${created.length} tunnel(s) from ssh config.`);
+      refresh(setRows, setLoadError);
+      setTimeout(() => setActionError(null), 4000);
+    } catch (e) {
+      setActionError(`SSH import failed: ${String(e)}`);
+    }
+  }, []);
+
   const handleBulk = useCallback(
     async (action: (id: string) => Promise<unknown>) => {
       const ids = visibleRows.map((r) => r.id);
@@ -291,6 +330,12 @@ export default function App() {
           Start on login
         </label>
       )}
+
+      <div className="import-actions" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <button className="ghost" onClick={handleExportJson}>Export JSON</button>
+        <button className="ghost" onClick={handleImportJson}>Import JSON</button>
+        <button className="ghost" onClick={handleImportSsh}>Import ~/.ssh/config</button>
+      </div>
 
       {rows.length > 1 && (
         <div className="bulk-actions">

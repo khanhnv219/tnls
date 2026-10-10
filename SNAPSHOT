@@ -39,7 +39,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 16 | polish: start on login toggle | autostart plugin + header checkbox | DONE |
 | 17 | polish: extra (copy/uptime/logs/bulk/shortcuts) | polish thêm batch | DONE |
 | 18 | Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
-
+| 19 | Phase 2: Import/Export + ssh_config | JSON + Host/LocalForward import | DONE |
 ## Completed
 
 - [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
@@ -51,29 +51,33 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
 - [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
 - [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
+- [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
+- [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
+- [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
 - [2026-10-09] Polish: search/filter + duplicate tunnel (commit 14).
 - [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 15).
 - [2026-10-10] Polish: start on login toggle (commit 16).
 - [2026-10-10] Polish thêm: copy/uptime/live logs/bulk/shortcuts/onboarding (commit 17).
 - [2026-10-10] Phase 2: ProxyJump + remote port fix (commit 18).
+- [2026-10-10] Phase 2: Import/Export + ssh_config (commit 19).
 
-## Changed files (commit 18)
+## Changed files (commit 19)
 
-- src-tauri/crates/core/src/tunnel/mod.rs (proxyJump field, remote forwardSpec `bind:port:host:localPort`, re-add apply_update)
-- src-tauri/crates/core/src/persistence.rs (DB v2 migration proxy_jump, row_to_config, create/update)
-- src-tauri/crates/core/src/ssh.rs (ssh -J proxyJump)
-- src-tauri/crates/core/src/manager.rs (health skip for remote)
-- src/components/TunnelForm.tsx (Jump host field)
-- src/lib/types.ts (proxyJump)
-- src/App.tsx (copy proxyJump in duplicate)
+- src-tauri/crates/core/src/import.rs (mới: JSON parse/format, ssh_config parser Host/LocalForward, wildcard skip, 5 tests)
+- src-tauri/crates/core/src/lib.rs (pub mod import)
+- src-tauri/src/commands.rs (+ export_tunnels_json, import_tunnels_json, import_ssh_config)
+- src-tauri/src/lib.rs (register 3 commands)
+- src/App.tsx (import buttons: Export JSON, Import JSON, Import ~/.ssh/config)
+- src/lib/api.ts (exportTunnelsJson, importTunnelsJson, importSshConfig)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 18)
+## Checks (commit 19)
 
-- `cargo test -p tnls-core`: OK, 39 passed / 0 failed (+proxy_jump test).
-- `cargo clippy -p tnls-core -- -D warnings`: OK.
+- `cargo test -p tnls-core`: OK, 44 passed / 0 failed (39 trước + 5 import).
+- `cargo clippy -p tnls-core -- -D warnings`: OK (1 unused_mut fix).
 - `cargo fmt -- --check`: OK.
-- `npx tsc --noEmit`: OK (proxyJump in TunnelConfig/Input).
+- `npx tsc --noEmit`: OK.
+- `npm run build`: OK.
 
 ## Known issues
 
@@ -82,4 +86,4 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Next
 
-- Phase 2 next: Import/Export profiles (JSON) + Import ~/.ssh/config.
+- Phase 2 next: OS keychain + Retry policy UI.

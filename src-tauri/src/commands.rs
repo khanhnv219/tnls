@@ -84,3 +84,68 @@ pub fn get_tunnel_logs(
 pub fn get_runtime_status(state: State<'_, AppState>) -> Result<Vec<TunnelStatus>, String> {
     Ok(state.manager()?.statuses())
 }
+
+#[tauri::command]
+pub fn export_tunnels_json(state: State<'_, AppState>) -> Result<String, String> {
+    let db = state.db()?;
+    let configs = persistence::list(&db).map_err(err_text)?;
+    let inputs: Vec<TunnelInput> = configs
+        .into_iter()
+        .map(|c| TunnelInput {
+            name: c.name,
+            mode: c.mode,
+            ssh_target: c.ssh_target,
+            bind_address: Some(c.bind_address),
+            local_port: c.local_port,
+            remote_host: c.remote_host,
+            remote_port: c.remote_port,
+            identity_file: c.identity_file,
+            proxy_jump: c.proxy_jump,
+            auto_start: Some(c.auto_start),
+            keep_alive_interval: Some(c.keep_alive_interval),
+        })
+        .collect();
+    Ok(tnls_core::import::format_json_inputs(&inputs))
+}
+
+#[tauri::command]
+pub fn import_tunnels_json(state: State<'_, AppState>, json: String) -> Result<Vec<TunnelConfig>, String> {
+    let inputs = tnls_core::import::parse_json_inputs(&json).map_err(|e| e.to_string())?;
+    let mut created = Vec::new();
+    {
+        let db = state.db()?;
+        let mut manager = state.manager()?;
+        for input in inputs {
+            let config = persistence::create(&db, input).map_err(err_text)?;
+            manager.upsert_config(config.clone());
+            created.push(config);
+        }
+    }
+    Ok(created)
+}
+
+#[tauri::command]
+pub fn import_ssh_config(
+    state: State<'_, AppState>,
+    path: Option<String>,
+) -> Result<Vec<TunnelConfig>, String> {
+    let p = path.as_deref().map(std::path::Path::new);
+    let hosts = tnls_core::import::import_ssh_config(p).map_err(|e| e.to_string())?;
+    let mut created = Vec::new();
+    {
+        let db = state.db()?;
+        let mut manager = state.manager()?;
+        for host in hosts {
+            for input in tnls_core::import::host_to_inputs(&host) {
+                match persistence::create(&db, input) {
+                    Ok(cfg) => {
+                        manager.upsert_config(cfg.clone());
+                        created.push(cfg);
+                    }
+                    Err(e) => tracing::warn!("ssh import skip: {}", e),
+                }
+            }
+        }
+    }
+    Ok(created)
+}

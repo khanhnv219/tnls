@@ -53,6 +53,7 @@ export function TunnelForm({
   const [keepAlive, setKeepAlive] = useState(
     seed?.keepAliveInterval != null ? String(seed.keepAliveInterval) : "30",
   );
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const needsRemote = mode === "local" || mode === "remote";
 

@@ -49,7 +49,19 @@ export async function getRuntimeStatus(): Promise<TunnelStatus[]> {
   return invoke("get_runtime_status");
 }
 
-const EVENT_TOPICS = [
+export async function exportTunnelsJson(): Promise<string> {
+  return invoke("export_tunnels_json");
+}
+
+export async function importTunnelsJson(json: string): Promise<TunnelConfig[]> {
+  return invoke("import_tunnels_json", { json });
+}
+
+export async function importSshConfig(path?: string | null): Promise<TunnelConfig[]> {
+  return invoke("import_ssh_config", { path: path ?? null });
+}
+
+ const EVENT_TOPICS = [
   "tunnel://started",
   "tunnel://state-changed",
   "tunnel://retry-scheduled",
