@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (polish 2: desktop notification)
-Status: notification xong — tiếp start on login
-Current phase: Polish dùng hàng ngày (2/3 features)
+Last updated: 2026-10-10 (polish 3: start on login)
+Status: Polish xong — app hoàn thiện, chờ verify cuối
+Current phase: Polish dùng hàng ngày (3/3 features done)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -36,6 +36,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 13 | feat: auto-start tunnels on launch | load profiles + start flagged ones | DONE |
 | 14 | polish: search + duplicate tunnel | filter list, duplicate prefill form | DONE |
 | 15 | polish: desktop notification | fail/retry/health/recovered notifies | DONE |
+| 16 | polish: start on login toggle | autostart plugin + header checkbox | DONE |
 
 ## Completed
 
@@ -50,23 +51,23 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 - [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
 - [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
 - [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
-- [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
 - [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
 - [2026-10-09] Polish: search/filter + duplicate tunnel (commit 14).
 - [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 15).
+- [2026-10-10] Polish: start on login toggle (commit 16).
 
-## Changed files (commit 15)
+## Changed files (commit 16)
 
-- src-tauri/Cargo.toml (tauri-plugin-notification 2)
-- src-tauri/Cargo.lock (notification deps)
-- src-tauri/capabilities/default.json (notification:default)
-- src-tauri/src/lib.rs (plugin notification init)
-- src/lib/notify.ts (mới: ensurePermission, notifyForEvent, fireNotification)
-- src/App.tsx (prevStates ref, ensurePermission on mount, fire on lifecycle events)
-- package.json / package-lock.json (@tauri-apps/plugin-notification)
+- src-tauri/Cargo.toml (tauri-plugin-autostart 2)
+- src-tauri/Cargo.lock (autostart deps)
+- src-tauri/capabilities/default.json (autostart:default)
+- src-tauri/src/lib.rs (plugin autostart init)
+- src/App.tsx (autostart state, mount probe, checkbox in header)
+- src/App.css (.autostart-row)
+- package.json / package-lock.json (@tauri-apps/plugin-autostart)
 - SNAPSHOT (cập nhật)
 
-## Checks (commit 15)
+## Checks (commit 16)
 
 - `npx tsc --noEmit`: OK.
 - `npm run build`: OK.
@@ -82,4 +83,4 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 
 ## Next
 
-- Polish 3: start on login toggle.
+- Verify cuối: `npm run tauri dev` + tạo/dupe/start/search/tray/autostart end-to-end (chờ đóng dev server để commit).

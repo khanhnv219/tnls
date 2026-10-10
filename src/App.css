@@ -390,3 +390,16 @@ pre.logs {
 input.search {
   min-width: 220px;
 }
+
+.autostart-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+  font-size: 14px;
+}
+
+.autostart-row input {
+  width: 16px;
+  height: 16px;
+}

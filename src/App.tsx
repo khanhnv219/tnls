@@ -18,6 +18,7 @@ import {
   fireNotification,
   notifyForEvent,
 } from "./lib/notify";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
   TunnelConfig,
   TunnelInput,
@@ -73,6 +74,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [autostart, setAutostart] = useState<boolean | null>(null);
   const prevStates = useRef<Record<string, string>>({});
 
   useEffect(() => {
@@ -96,6 +98,12 @@ export default function App() {
       unsubscribe = fn;
     });
     return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
+    isEnabled()
+      .then(setAutostart)
+      .catch(() => setAutostart(null));
   }, []);
 
   const runAction = useCallback(
@@ -203,6 +211,30 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {autostart !== null && (
+        <label className="autostart-row">
+          <input
+            type="checkbox"
+            checked={autostart}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              setAutostart(next);
+              try {
+                if (next) await enable();
+                else await disable();
+              } catch {
+                try {
+                  setAutostart(await isEnabled());
+                } catch {
+                  setAutostart(null);
+                }
+              }
+            }}
+          />
+          Start on login
+        </label>
+      )}
 
       {loadError && (
         <p className="error" role="alert">
