@@ -517,7 +517,8 @@ impl<S: Spawner> TunnelManager<S> {
                         } else {
                             let endpoint = config.local_endpoint();
                             let healthy = self.checker.check(&endpoint);
-                            self.runtimes.get_mut(&id).expect("filtered").last_healthy = Some(healthy);
+                            self.runtimes.get_mut(&id).expect("filtered").last_healthy =
+                                Some(healthy);
                             if healthy {
                                 self.set_state(&id, TunnelState::Running);
                             } else {
@@ -527,7 +528,10 @@ impl<S: Spawner> TunnelManager<S> {
                         }
                     } else if state == TunnelState::Running || state == TunnelState::Degraded {
                         // Only re-check health for local/dynamic.
-                        let is_remote = self.configs.get(&id).is_some_and(|c| c.mode == crate::tunnel::TunnelMode::Remote);
+                        let is_remote = self
+                            .configs
+                            .get(&id)
+                            .is_some_and(|c| c.mode == crate::tunnel::TunnelMode::Remote);
                         if !is_remote {
                             self.maybe_recheck_health(&id, now);
                         }

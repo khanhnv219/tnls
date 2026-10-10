@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (Phase 2: ProxyJump + remote port fix)
-Status: Phase 2 model done — verify xong, chuẩn bị import/export
-Current phase: Phase 2 (2/6 features)
+Last updated: 2026-10-10 (Phase 2: OS keychain)
+Status: keychain done — verify xong, chuẩn bị retry policy
+Current phase: Phase 2 (4/6 features)
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -40,6 +40,7 @@ Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
 | 17 | polish: extra (copy/uptime/logs/bulk/shortcuts) | polish thêm batch | DONE |
 | 18 | Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
 | 19 | Phase 2: Import/Export + ssh_config | JSON + Host/LocalForward import | DONE |
+| 20 | Phase 2: OS keychain passphrase | keyring service tnls, form save/clear | DONE |
 ## Completed
 
 - [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).

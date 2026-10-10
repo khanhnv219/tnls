@@ -173,20 +173,23 @@ export default function App() {
   }, [rows, query]);
 
   const handleSave = useCallback(
-    async (input: TunnelInput) => {
+    async (input: TunnelInput): Promise<TunnelConfig | void> => {
       setSaving(true);
       setSaveError(null);
       try {
+        let saved: TunnelConfig | void;
         if (formTarget?.id) {
-          await updateTunnel(formTarget.id, input);
+          saved = await updateTunnel(formTarget.id, input);
         } else {
-          await createTunnel(input);
+          saved = await createTunnel(input);
         }
         setDraft(null);
         setFormTarget(undefined);
         refresh(setRows, setLoadError);
+        return saved;
       } catch (e) {
         setSaveError(String(e));
+        throw e;
       } finally {
         setSaving(false);
       }

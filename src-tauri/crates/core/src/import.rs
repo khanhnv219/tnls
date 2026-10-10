@@ -54,8 +54,7 @@ fn read_config(path: Option<&Path>) -> Result<String, String> {
         ];
         for p in &candidates {
             if p.is_file() {
-                return std::fs::read_to_string(p)
-                    .map_err(|e| format!("read {p:?}: {e}"));
+                return std::fs::read_to_string(p).map_err(|e| format!("read {p:?}: {e}"));
             }
         }
         Err("~/.ssh/config not found".into())
@@ -140,7 +139,10 @@ fn parse_config(content: &str) -> Vec<HostImport> {
             hosts.push(h);
         }
     }
-    hosts.into_iter().filter(|h| !h.local_forwards.is_empty()).collect()
+    hosts
+        .into_iter()
+        .filter(|h| !h.local_forwards.is_empty())
+        .collect()
 }
 
 fn split_tokens(line: &str) -> Vec<String> {
@@ -179,7 +181,11 @@ fn parse_local_forward(args: &[String]) -> Option<LocalForward> {
     //   LocalForward 5433 postgres.internal:5432
     //   LocalForward 127.0.0.1:5433 postgres.internal:5432
     let (bind, port) = parse_bind_port(&args[0])?;
-    let rest = if args.len() == 1 { None } else { Some(args[1].as_str()) };
+    let rest = if args.len() == 1 {
+        None
+    } else {
+        Some(args[1].as_str())
+    };
     let (remote_host, remote_port) = match rest {
         Some(r) if r.contains(':') => parse_host_port(r)?,
         Some(_) => return None,
@@ -216,19 +222,22 @@ fn parse_host_port(spec: &str) -> Option<(String, u16)> {
 
 /// Convert a parsed host into one `TunnelInput` per `LocalForward`.
 pub fn host_to_inputs(host: &HostImport) -> Vec<TunnelInput> {
-    host.local_forwards.iter().map(|fwd| TunnelInput {
-        name: format!("{} — {}:{}", host.alias, fwd.remote_host, fwd.remote_port),
-        mode: TunnelMode::Local,
-        ssh_target: host.alias.clone(),
-        bind_address: Some(fwd.bind.clone()),
-        local_port: fwd.local_port,
-        remote_host: Some(fwd.remote_host.clone()),
-        remote_port: Some(fwd.remote_port),
-        identity_file: host.identity_file.clone(),
-        proxy_jump: host.proxy_jump.clone(),
-        auto_start: Some(false),
-        keep_alive_interval: Some(30),
-    }).collect()
+    host.local_forwards
+        .iter()
+        .map(|fwd| TunnelInput {
+            name: format!("{} — {}:{}", host.alias, fwd.remote_host, fwd.remote_port),
+            mode: TunnelMode::Local,
+            ssh_target: host.alias.clone(),
+            bind_address: Some(fwd.bind.clone()),
+            local_port: fwd.local_port,
+            remote_host: Some(fwd.remote_host.clone()),
+            remote_port: Some(fwd.remote_port),
+            identity_file: host.identity_file.clone(),
+            proxy_jump: host.proxy_jump.clone(),
+            auto_start: Some(false),
+            keep_alive_interval: Some(30),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -301,7 +310,7 @@ mod tests {
             auto_start: None,
             keep_alive_interval: None,
         };
-        let json = format_json_inputs(&[input.clone()]);
+        let json = format_json_inputs(std::slice::from_ref(&input));
         let parsed = parse_json_inputs(&json).unwrap();
         assert_eq!(parsed[0].proxy_jump.as_deref(), Some("jump"));
         assert_eq!(parsed[0].ssh_target, "bastion");

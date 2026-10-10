@@ -49,6 +49,18 @@ export async function getRuntimeStatus(): Promise<TunnelStatus[]> {
   return invoke("get_runtime_status");
 }
 
+export async function getPassphraseState(id: string): Promise<boolean> {
+  return invoke("get_passphrase_state", { id });
+}
+
+export async function setPassphrase(id: string, passphrase: string): Promise<void> {
+  return invoke("set_passphrase", { id, passphrase });
+}
+
+export async function deletePassphrase(id: string): Promise<void> {
+  return invoke("delete_passphrase", { id });
+}
+
 export async function exportTunnelsJson(): Promise<string> {
   return invoke("export_tunnels_json");
 }
@@ -61,7 +73,7 @@ export async function importSshConfig(path?: string | null): Promise<TunnelConfi
   return invoke("import_ssh_config", { path: path ?? null });
 }
 
- const EVENT_TOPICS = [
+const EVENT_TOPICS = [
   "tunnel://started",
   "tunnel://state-changed",
   "tunnel://retry-scheduled",

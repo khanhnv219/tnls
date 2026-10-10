@@ -1,5 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { TunnelConfig, TunnelInput, TunnelMode } from "../lib/types";
+import {
+  deletePassphrase,
+  getPassphraseState,
+  setPassphrase,
+} from "../lib/api";
 
 const MODES: { value: TunnelMode; label: string }[] = [
   { value: "local", label: "Local (-L)" },
@@ -25,7 +30,7 @@ export function TunnelForm({
   draft?: TunnelInput | null;
   saving: boolean;
   saveError: string | null;
-  onSave: (input: TunnelInput) => void;
+  onSave: (input: TunnelInput) => Promise<TunnelConfig | void>;
   onClose: () => void;
 }) {
   const seed = (draft ?? initial) as
@@ -49,15 +54,25 @@ export function TunnelForm({
   );
   const [identityFile, setIdentityFile] = useState(seed?.identityFile ?? "");
   const [proxyJump, setProxyJump] = useState(seed?.proxyJump ?? "");
+  const [passphrase, setPassphraseValue] = useState("");
+  const [hasStored, setHasStored] = useState(false);
   const [autoStart, setAutoStart] = useState(seed?.autoStart ?? false);
   const [keepAlive, setKeepAlive] = useState(
     seed?.keepAliveInterval != null ? String(seed.keepAliveInterval) : "30",
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [passphraseMsg, setPassphraseMsg] = useState<string | null>(null);
 
   const needsRemote = mode === "local" || mode === "remote";
 
-  function submit(e: React.FormEvent) {
+  useEffect(() => {
+    if (!initial?.id) return;
+    getPassphraseState(initial.id)
+      .then(setHasStored)
+      .catch(() => {});
+  }, [initial?.id]);
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const next: Record<string, string> = {};
     if (name.trim() === "") next.name = "Name is required.";
@@ -77,19 +92,36 @@ export function TunnelForm({
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
-    onSave({
-      name: name.trim(),
-      mode,
-      sshTarget: sshTarget.trim(),
-      bindAddress: bindAddress.trim() === "" ? null : bindAddress.trim(),
-      localPort: local as number,
-      remoteHost: needsRemote ? remoteHost.trim() : null,
-      remotePort: needsRemote ? (parsePort(remotePort) as number) : null,
-      identityFile: identityFile.trim() === "" ? null : identityFile.trim(),
-      proxyJump: proxyJump.trim() === "" ? null : proxyJump.trim(),
-      autoStart,
-      keepAliveInterval: keep as number,
-    });
+    let saved: TunnelConfig | void;
+    try {
+      saved = await onSave({
+        name: name.trim(),
+        mode,
+        sshTarget: sshTarget.trim(),
+        bindAddress: bindAddress.trim() === "" ? null : bindAddress.trim(),
+        localPort: local as number,
+        remoteHost: needsRemote ? remoteHost.trim() : null,
+        remotePort: needsRemote ? (parsePort(remotePort) as number) : null,
+        identityFile: identityFile.trim() === "" ? null : identityFile.trim(),
+        proxyJump: proxyJump.trim() === "" ? null : proxyJump.trim(),
+        autoStart,
+        keepAliveInterval: keep as number,
+      });
+    } catch {
+      return;
+    }
+
+    const targetId = (saved as TunnelConfig | undefined)?.id ?? initial?.id;
+    if (targetId && passphrase.trim() !== "") {
+      try {
+        await setPassphrase(targetId, passphrase);
+        setPassphraseMsg("Passphrase saved to OS keychain.");
+        setHasStored(true);
+        setPassphraseValue("");
+      } catch (err) {
+        setPassphraseMsg(`Keychain save failed: ${String(err)}`);
+      }
+    }
   }
 
   return (
@@ -213,6 +245,44 @@ export function TunnelForm({
               onChange={(e) => setProxyJump(e.target.value)}
               placeholder="jump-bastion or user@jump:2222"
             />
+          </label>
+
+          <label>
+            Identity passphrase (stored in OS keychain, optional)
+            <input
+              type="password"
+              value={passphrase}
+              onChange={(e) => setPassphraseValue(e.target.value)}
+              placeholder={
+                hasStored
+                  ? "•••••••• (stored — leave blank to keep)"
+                  : "leave blank for no passphrase"
+              }
+            />
+            {hasStored && (
+              <span style={{ fontSize: 12 }}>
+                A passphrase is stored.{" "}
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={async () => {
+                    if (!initial?.id) return;
+                    try {
+                      await deletePassphrase(initial.id);
+                      setHasStored(false);
+                      setPassphraseMsg("Cleared from keychain.");
+                    } catch (err) {
+                      setPassphraseMsg(`Clear failed: ${String(err)}`);
+                    }
+                  }}
+                >
+                  Clear from keychain
+                </button>
+              </span>
+            )}
+            {passphraseMsg && (
+              <span style={{ fontSize: 12, color: "#059669" }}>{passphraseMsg}</span>
+            )}
           </label>
 
           <div className="form-row">

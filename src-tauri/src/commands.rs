@@ -39,6 +39,7 @@ pub fn delete_tunnel(state: State<'_, AppState>, id: String) -> Result<(), Strin
         let db = state.db()?;
         persistence::delete(&db, &id).map_err(err_text)?;
     }
+    let _ = tnls_core::keychain::delete_passphrase(&id);
     state.manager()?.remove_config(&id).map_err(err_text)?;
     Ok(())
 }
@@ -86,6 +87,21 @@ pub fn get_runtime_status(state: State<'_, AppState>) -> Result<Vec<TunnelStatus
 }
 
 #[tauri::command]
+pub fn get_passphrase_state(id: String) -> Result<bool, String> {
+    Ok(tnls_core::keychain::has_passphrase(&id))
+}
+
+#[tauri::command]
+pub fn set_passphrase(id: String, passphrase: String) -> Result<(), String> {
+    tnls_core::keychain::set_passphrase(&id, &passphrase).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_passphrase(id: String) -> Result<(), String> {
+    tnls_core::keychain::delete_passphrase(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn export_tunnels_json(state: State<'_, AppState>) -> Result<String, String> {
     let db = state.db()?;
     let configs = persistence::list(&db).map_err(err_text)?;
@@ -109,7 +125,10 @@ pub fn export_tunnels_json(state: State<'_, AppState>) -> Result<String, String>
 }
 
 #[tauri::command]
-pub fn import_tunnels_json(state: State<'_, AppState>, json: String) -> Result<Vec<TunnelConfig>, String> {
+pub fn import_tunnels_json(
+    state: State<'_, AppState>,
+    json: String,
+) -> Result<Vec<TunnelConfig>, String> {
     let inputs = tnls_core::import::parse_json_inputs(&json).map_err(|e| e.to_string())?;
     let mut created = Vec::new();
     {
