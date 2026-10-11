@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-10 (fix: suppress ssh console window on Windows)
-Status: fix done — Phase 2 hoàn tất, gác Phase 3 (russh)
-Current phase: Phase 2 (6/6 features)
+Last updated: 2026-10-11 (re-sync: 25 commits, fix console window)
+Status: fix done — Phase 2 hoàn tất (6/6), Phase 3 (russh) gác theo yêu cầu
+Current phase: Phase 2 DONE (6/6) + fix console window
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -18,80 +18,89 @@ tracing / GitHub Actions. Xem chi tiết: docs/DESIGN.md.
 ## Commit log
 
 Mỗi commit 1 tính năng; mỗi commit đều cập nhật file này.
+Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline --reverse`.
 
-| # | Commit | Scope | Tình trạng |
-|---|--------|-------|------------|
-| 1 | docs: lưu thiết kế và snapshot | docs/DESIGN.md, SNAPSHOT | DONE |
-| 2 | chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS, rename tnls | DONE |
-| 3 | feat: domain types tunnel (Rust) | tnls-core: TunnelConfig, mode, state, errors | DONE |
-| 4 | feat: SQLite persistence | tnls-core persistence: schema v1, CRUD, auto-start | DONE |
-| 5 | feat: OpenSSH process runner | tnls-core ssh: argv builder, spawn, classify | DONE |
-| 6 | feat: tunnel lifecycle manager | tnls-core manager: start/stop/retry supervisor | DONE |
-| 7 | feat: Tauri commands + events | AppState, 9 commands, supervisor thread, events | DONE |
-| 8 | feat: frontend tunnel list UI | TunnelList, StatusBadge, LogDrawer, event refetch | DONE |
-| 9 | feat: tunnel form local forwarding | TunnelForm create/edit, validation, Edit button | DONE |
-| 10 | feat: TCP health check | health module, Degraded transitions, event bridge | DONE |
-| 11 | feat: system tray + shutdown | tray menu, close-to-tray, graceful quit | DONE |
-| 12 | test/ci: tests + workflow | unit tests, GitHub Actions | DONE |
-| 13 | feat: auto-start tunnels on launch | load profiles + start flagged ones | DONE |
-| 14 | polish: search + duplicate tunnel | filter list, duplicate prefill form | DONE |
-| 15 | polish: desktop notification | fail/retry/health/recovered notifies | DONE |
-| 16 | polish: start on login toggle | autostart plugin + header checkbox | DONE |
-| 17 | polish: extra (copy/uptime/logs/bulk/shortcuts) | polish thêm batch | DONE |
-| 18 | Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
-| 19 | Phase 2: Import/Export + ssh_config | JSON + Host/LocalForward import | DONE |
-| 20 | Phase 2: OS keychain passphrase | keyring service tnls, form save/clear | DONE |
-| 21 | Phase 2: Retry policy UI | per-tunnel maxRetries/delay, persisted | DONE |
+| # | Commit (git) | Scope | Tình trạng |
+|---|--------------|-------|------------|
+| 1 | 785b804 docs: lưu thiết kế và snapshot | docs/DESIGN.md, SNAPSHOT | DONE |
+| 2 | 370658b chore: khởi tạo Tauri workspace | scaffold Tauri 2 + React-TS, rename tnls | DONE |
+| 3 | 9567a7f feat: domain types tunnel (Rust) | tnls-core: TunnelConfig, mode, state, errors | DONE |
+| 4 | aa8f927 feat: SQLite persistence | tnls-core persistence: schema v1, CRUD, auto-start | DONE |
+| 5 | ab9eb4c feat: OpenSSH process runner | tnls-core ssh: argv builder, spawn, classify | DONE |
+| 6 | 7a6b310 feat: tunnel lifecycle manager | tnls-core manager: start/stop/retry supervisor | DONE |
+| 7 | 7e15be0 feat: Tauri commands + events | AppState, 9 commands, supervisor thread, events | DONE |
+| 8 | 233a0d0 feat: frontend tunnel list UI | TunnelList, StatusBadge, LogDrawer, event refetch | DONE |
+| 9 | 2636c0d feat: tunnel form local forwarding | TunnelForm create/edit, validation, Edit button | DONE |
+| 10 | e58967f feat: TCP health check | health module, Degraded transitions, event bridge | DONE |
+| 11 | c6571ee feat: system tray + shutdown | tray menu, close-to-tray, graceful quit | DONE |
+| 12 | 2e27f3a test/ci: tests + workflow | unit tests, GitHub Actions | DONE |
+| 13 | 10f933c docs: xác minh build MSVC thành công | MSVC check pass | DONE |
+| 14 | 9ea3f93 docs: persist MSVC env, build trực tiếp không cần vcvarsall | user env + cargo config + override | DONE |
+| 15 | a2e635d feat: auto-start tunnels on launch | load profiles + start flagged ones | DONE |
+| 16 | d679ce8 polish: search + duplicate tunnel | filter list, duplicate prefill form | DONE |
+| 17 | 7902427 chore: ignore vite dev pid/log | .gitignore | DONE |
+| 18 | 9dd7b20 polish: desktop notification | fail/retry/health/recovered notifies | DONE |
+| 19 | 14b2978 polish: start on login toggle | autostart plugin + header checkbox | DONE |
+| 20 | d99034e polish: extra (copy/uptime/logs/bulk/shortcuts) | polish thêm batch | DONE |
+| 21 | 93e482a Phase 2: ProxyJump + remote port fix | DB v2, ssh -J, remote bind:port | DONE |
+| 22 | 7514d96 Phase 2: Import/Export + ssh_config | JSON + Host/LocalForward import | DONE |
+| 23 | 22b22c3 Phase 2: OS keychain passphrase | keyring service tnls, form save/clear | DONE |
+| 24 | 1694415 Phase 2: Retry policy UI (per-tunnel maxRetries/delay) | DB v3, per-tunnel retry | DONE |
+| 25 | 748512e fix: suppress console window for ssh on Windows | ssh CREATE_NO_WINDOW | DONE |
+
+> Lưu ý: commit 24 và 25 có message trùng phần "Phase 2: Retry policy UI" do re-apply sau khi sửa ssh.rs; commit 25 thực chất là fix console window (diff duy nhất: `src-tauri/crates/core/src/ssh.rs` + `SNAPSHOT`).
 
 ## Completed
 
-- [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1).
-- [2026-10-09] Scaffold Tauri 2 + React-TS, rename tnls, verify build (commit 2).
-- [2026-10-09] Domain types tunnel trong tnls-core + workspace (commit 3).
-- [2026-10-09] SQLite persistence: schema v1, CRUD, auto-start filter (commit 4).
-- [2026-10-09] OpenSSH process runner: argv builder, spawn, classify (commit 5).
-- [2026-10-09] Tunnel lifecycle manager: supervisor, retry, events (commit 6).
-- [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7).
-- [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8).
-- [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9).
-- [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10).
-- [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11).
-- [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12).
-- [2026-10-09] Auto-start: start profiles flagged on launch (commit 13).
-- [2026-10-09] Polish: search/filter + duplicate tunnel (commit 14).
-- [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 15).
-- [2026-10-10] Polish: start on login toggle (commit 16).
-- [2026-10-10] Polish thêm: copy/uptime/live logs/bulk/shortcuts/onboarding (commit 17).
-- [2026-10-10] Phase 2: ProxyJump + remote port fix (commit 18).
-- [2026-10-10] Phase 2: Import/Export + ssh_config (commit 19).
-- [2026-10-10] Phase 2: OS keychain passphrase (commit 20).
-- [2026-10-10] Phase 2: Retry policy UI (commit 21).
+- [2026-10-09] Thống nhất techstack, MVP scope, kiến trúc (commit 1 — 785b804).
+- [2026-10-09] Scaffold Tauri 2 + React-TS, rename tnls, verify build (commit 2 — 370658b).
+- [2026-10-09] Domain types tunnel trong tnls-core + workspace (commit 3 — 9567a7f).
+- [2026-10-09] SQLite persistence: schema v1, CRUD, auto-start filter (commit 4 — aa8f927).
+- [2026-10-09] OpenSSH process runner: argv builder, spawn, classify (commit 5 — ab9eb4c).
+- [2026-10-09] Tunnel lifecycle manager: supervisor, retry, events (commit 6 — 7a6b310).
+- [2026-10-09] Tauri commands + events: AppState, IPC, supervisor thread (commit 7 — 7e15be0).
+- [2026-10-09] Frontend tunnel list UI: bảng, badge, logs, event refetch (commit 8 — 233a0d0).
+- [2026-10-09] Tunnel form: tạo/sửa, validation, Edit button (commit 9 — 2636c0d).
+- [2026-10-09] TCP health check: dial local endpoint, Degraded/Running, event bridge (commit 10 — e58967f).
+- [2026-10-09] System tray + shutdown: tray menu, close-to-tray, graceful quit (commit 11 — c6571ee).
+- [2026-10-09] Tests + CI: workflow 3 OS, README test docs (commit 12 — 2e27f3a).
+- [2026-10-09] Xác minh build MSVC thành công (commit 13 — 10f933c).
+- [2026-10-09] Persist MSVC env, build trực tiếp không cần vcvarsall (commit 14 — 9ea3f93).
+- [2026-10-09] Auto-start: start profiles flagged on launch (commit 15 — a2e635d).
+- [2026-10-09] Polish: search/filter + duplicate tunnel (commit 16 — d679ce8).
+- [2026-10-09] Polish: ignore vite dev pid/log (commit 17 — 7902427).
+- [2026-10-10] Polish: desktop notification on fail/retry/health/recovered (commit 18 — 9dd7b20).
+- [2026-10-10] Polish: start on login toggle (commit 19 — 14b2978).
+- [2026-10-10] Polish thêm: copy/uptime/live logs/bulk/shortcuts/onboarding (commit 20 — d99034e).
+- [2026-10-10] Phase 2: ProxyJump + remote port fix (commit 21 — 93e482a).
+- [2026-10-10] Phase 2: Import/Export + ssh_config (commit 22 — 7514d96).
+- [2026-10-10] Phase 2: OS keychain passphrase (commit 23 — 22b22c3).
+- [2026-10-10] Phase 2: Retry policy UI per-tunnel (commit 24 — 1694415).
+- [2026-10-10] Fix: suppress console window for ssh on Windows (commit 25 — 748512e).
 
-## Changed files (commit 21)
+## Changed files (commit 25 — HEAD)
 
-- src-tauri/crates/core/src/tunnel/mod.rs (maxRetries, retryDelaySecs + validate)
-- src-tauri/crates/core/src/persistence.rs (DB v3 migration, row_to_config named cols, create/update)
-- src-tauri/crates/core/src/manager.rs (per-tunnel handle_failure, manual_contains fix)
-- src-tauri/crates/core/src/import.rs (maxRetries/retryDelaySecs in host_to_inputs)
-- src/components/TunnelForm.tsx (retry fields, validation, onSave)
-- src/lib/types.ts (maxRetries, retryDelaySecs)
-- src/App.tsx (copy retry fields in duplicate)
-- SNAPSHOT (cập nhật)
+- src-tauri/crates/core/src/ssh.rs (SshChild::spawn: `Command::creation_flags(CREATE_NO_WINDOW)` on Windows)
+- SNAPSHOT (re-sync header + commit log + completed; trước đó commit 24 thay đổi 8 files retry policy)
 
-## Checks (commit 21)
+## Checks (commit 25 — HEAD)
 
-- `cargo test -p tnls-core`: OK, 47 passed / 0 failed.
+- `cargo test -p tnls-core`: OK, 48 passed / 0 failed.
 - `cargo clippy -p tnls-core -- -D warnings`: OK.
 - `cargo fmt -- --check`: OK.
-- `cargo check --workspace`: OK.
+- `cargo check --workspace` (MSVC): OK.
 - `npx tsc --noEmit`: OK.
-- `npm run build`: OK.
+- `npm run build`: OK (27 modules).
+- `npm run tauri build` (release, 0.1.0, MSVC): OK — 4m14s, 2 bundles (msi 3.55 MiB, nsis 2.52 MiB, portable 7.33 MiB).
 
 ## Known issues
 
-- MSVC env đã persist (user scope), toolchain MSVC pinned, linker pinned — `cargo build` chạy thẳng.
-- Tray + health + retry + polish e2e phụ thuộc bastion thật của user (đã tạo tunnel OK).
+- MSVC env đã persist (user scope: INCLUDE/LIB/LIBPATH, WindowsSdkDir, SDK 10.0.26100.0 prepend PATH) + `rustup override msvc` + `~/.cargo/config.toml` linker pin — `cargo build` chạy thẳng, không cần `vcvarsall`.
+- Phase 2 hoàn tất 6/6 (ProxyJump, Import/Export, ssh_config, keychain, retry policy); health dùng `local_endpoint` skip cho remote.
+- Phase 3 (russh) gác theo yêu cầu — fix console window đã giải quyết triệt để không cần russh.
+- Tray + health + retry e2e đã verify trên máy dev; máy mới đã cài NSIS và tunnel kết nối thành công (chưa cấu hình jump/dynamic, đúng kỳ vọng).
 
 ## Next
 
-- Verify full gates + đóng Phase 2 (final commit).
+- Đã build xong release 0.1.0 với fix console window: `src-tauri/target/release/bundle/nsis/tnls_0.1.0_x64-setup.exe` (2.52 MiB) sẵn sàng đưa máy khác.
+- Không còn việc Phase 2/3 bắt buộc — chờ báo cáo máy mới nếu phát sinh lỗi mới.
