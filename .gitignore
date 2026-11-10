@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 vite-dev.pid
 vite-dev.log
+
+# OpenDesign export (source of docs/DESIGN_SYSTEM.md and src/styles/*)
+Project-As-Complete-Opendesign-Design-System/
