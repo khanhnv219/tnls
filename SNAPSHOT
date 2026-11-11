@@ -66,7 +66,9 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 | 41 | 23a1fbb feat(logs): timestamp and level for each tunnel log line | core logs.rs, manager, get_tunnel_logs, LogDrawer | DONE |
 | 42 | a801158 feat(form): live ssh command preview from the backend | ssh::preview_args, preview_ssh_command, CommandPreview | DONE |
 | 43 | d1d3aca feat(tray): ask to minimize to tray or quit on window close | tray.rs, hide_to_tray/quit_app, CloseAppModal | DONE |
-| 44 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
+| 44 | 21dd565 docs: re-sync snapshot after phase 5 and close prompt | SNAPSHOT | DONE |
+| 45 | 5cde102 fix(logs): record tunnel lifecycle events in the tunnel log | manager.rs log_event, LogLine::tnls | DONE |
+| 46 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
 
 > Lưu ý: commit 24 và 25 có message trùng phần "Phase 2: Retry policy UI" do re-apply sau khi sửa ssh.rs; commit 25 thực chất là fix console window (diff duy nhất: `src-tauri/crates/core/src/ssh.rs` + `SNAPSHOT`).
 
@@ -136,5 +138,6 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 ## Next
 
 - Test tay luồng đóng app trên app thật (xem Checks).
+- Nghi vấn: "Tunnel degraded" ngay sau khi start là báo nhầm. Startup grace chỉ 400 ms, trong khi OpenSSH chỉ mở port -L sau khi xác thực xong; lần dial tiếp theo cách 10 s nên tunnel kẹt Degraded rồi mới "recovered". Cần xác nhận bằng log (dòng `tnls: degraded` ngay sau `tnls: ssh started`) trước khi sửa (giữ Starting và dial lại tới khi port mở hoặc hết thời gian chờ).
 - Còn thiếu so với design: nút Browse cho identity file (cần plugin dialog), font Söhne/JetBrains Mono (đang fallback Segoe UI / Cascadia Mono).
 - Timestamp log là thời điểm supervisor gom dòng (≤250 ms sau khi ssh ghi); nếu cần chính xác hơn thì stamp trong thread đọc stderr.
