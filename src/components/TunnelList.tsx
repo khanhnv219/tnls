@@ -108,6 +108,7 @@ export function TunnelList({
   onEdit,
   onDuplicate,
   onShowLogs,
+  onDiagnose,
   onCreate,
   onImportSsh,
   onClearQuery,
@@ -126,6 +127,7 @@ export function TunnelList({
   onEdit: (row: TunnelRow) => void;
   onDuplicate: (row: TunnelRow) => void;
   onShowLogs: (row: TunnelRow) => void;
+  onDiagnose: (row: TunnelRow) => void;
   onCreate: () => void;
   onImportSsh: () => void;
   onClearQuery: () => void;
@@ -233,6 +235,13 @@ export function TunnelList({
           icon: "terminal",
           shortcut: "L",
           onSelect: () => onShowLogs(menuRow),
+        },
+        {
+          kind: "item",
+          key: "diagnose",
+          label: "Diagnose connection",
+          icon: "layers",
+          onSelect: () => onDiagnose(menuRow),
         },
         { kind: "sep", key: "sep" },
         {

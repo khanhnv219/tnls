@@ -108,6 +108,41 @@ export async function previewSshCommand(input: TunnelInput): Promise<CommandPrev
   return invoke("preview_ssh_command", { input });
 }
 
+export type DiagStage = "sshAuth" | "localForward" | "destination";
+export type DiagOutcome = "pass" | "fail" | "skipped" | "notRun";
+
+/** `tnls_core::diagnose::StageReport`. */
+export interface StageReport {
+  stage: DiagStage;
+  outcome: DiagOutcome;
+  reason: string;
+  detail: string[];
+  at: string;
+  elapsedMs: number;
+}
+
+export interface Diagnosis {
+  tunnelId: string;
+  tunnelName: string;
+  startedAt: string;
+  stages: StageReport[];
+  summary: string;
+}
+
+/** Read-only staged diagnostics; never starts or stops the tunnel. */
+export async function diagnoseTunnel(id: string): Promise<Diagnosis> {
+  return invoke("diagnose_tunnel", { id });
+}
+
+/** Each stage as it finishes, before `diagnoseTunnel` resolves. */
+export async function onDiagnoseStage(
+  handler: (tunnelId: string, report: StageReport) => void,
+): Promise<() => void> {
+  return listen<{ tunnelId: string; report: StageReport }>("tunnel://diagnose-stage", (e) =>
+    handler(e.payload.tunnelId, e.payload.report),
+  );
+}
+
 export async function getRuntimeStatus(): Promise<TunnelStatus[]> {
   return invoke("get_runtime_status");
 }

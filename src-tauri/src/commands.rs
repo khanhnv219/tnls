@@ -154,6 +154,107 @@ pub fn get_runtime_status(state: State<'_, AppState>) -> Result<Vec<TunnelStatus
     Ok(state.manager()?.statuses())
 }
 
+/// Event carrying one finished diagnostics stage, so the UI can fill the
+/// stage list while later stages are still running.
+pub const DIAGNOSE_STAGE_EVENT: &str = "tunnel://diagnose-stage";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnoseStageEvent {
+    tunnel_id: String,
+    report: tnls_core::diagnose::StageReport,
+}
+
+/// Production environment for `tnls_core::diagnose`: real ssh probes and
+/// dials; the manager is locked only for the port check and log lines,
+/// never while ssh runs.
+struct LiveDiagnoseEnv {
+    app: tauri::AppHandle,
+    id: String,
+    proxied: bool,
+}
+
+impl tnls_core::diagnose::DiagnoseEnv for LiveDiagnoseEnv {
+    fn probe(
+        &mut self,
+        config: &TunnelConfig,
+        purpose: &tnls_core::ssh::SshPurpose,
+    ) -> tnls_core::diagnose::ProbeOutput {
+        tnls_core::diagnose::run_probe(
+            config,
+            purpose,
+            tnls_core::diagnose::PROBE_TIMEOUT,
+            self.proxied,
+        )
+    }
+
+    fn local_forward(&mut self, _config: &TunnelConfig) -> tnls_core::diagnose::Verdict {
+        use tauri::Manager as _;
+        match self
+            .app
+            .state::<AppState>()
+            .manager()
+            .map(|mut m| m.local_forward_verdict(&self.id))
+        {
+            Ok(v) => v,
+            Err(e) => (tnls_core::diagnose::Outcome::Fail, e),
+        }
+    }
+
+    fn dial(&mut self, host: &str, port: u16) -> std::io::Result<()> {
+        use std::net::ToSocketAddrs as _;
+        let addr = (host, port).to_socket_addrs()?.next().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "cannot resolve host")
+        })?;
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(3)).map(|_| ())
+    }
+
+    fn on_stage(&mut self, report: &tnls_core::diagnose::StageReport) {
+        use tauri::{Emitter as _, Manager as _};
+        if let Ok(mut m) = self.app.state::<AppState>().manager() {
+            m.append_log(
+                &self.id,
+                LogLine::tnls(
+                    report.at,
+                    tnls_core::diagnose::stage_level(report.outcome),
+                    &tnls_core::diagnose::stage_log_message(report),
+                ),
+            );
+        }
+        let _ = self.app.emit(
+            DIAGNOSE_STAGE_EVENT,
+            DiagnoseStageEvent {
+                tunnel_id: self.id.clone(),
+                report: report.clone(),
+            },
+        );
+    }
+}
+
+/// Run the staged, read-only diagnostics for one tunnel. Never starts,
+/// stops or restarts it; each stage is logged with time and level.
+#[tauri::command]
+pub async fn diagnose_tunnel(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<tnls_core::diagnose::Diagnosis, String> {
+    let config = match state.manager()?.config(&id).cloned() {
+        Some(c) => c,
+        None => {
+            let db = state.db()?;
+            persistence::get(&db, &id).map_err(err_text)?
+        }
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let proxied = tnls_core::ssh::uses_proxy(&config).unwrap_or(config.proxy_jump.is_some());
+        let mut env = LiveDiagnoseEnv { app, id, proxied };
+        tnls_core::diagnose::diagnose(&config, &mut env)
+    })
+    .await
+    .map_err(|e| format!("diagnostics task failed: {e}"))
+}
+
 /// Close dialog: keep running in the background; reopen from the tray icon.
 #[tauri::command]
 pub fn hide_to_tray(window: tauri::WebviewWindow) -> Result<(), String> {

@@ -73,7 +73,72 @@ pub fn build_argv(config: &TunnelConfig) -> Result<Vec<OsString>, TunnelError> {
     Ok(assemble_argv(
         ssh_binary(),
         config,
-        forward,
+        &SshPurpose::Tunnel { forward },
+        config.ssh_target.clone(),
+    ))
+}
+
+/// What an ssh invocation is for. Every purpose goes through the same
+/// [`assemble_argv`], so identity file, jump host, keepalive and BatchMode
+/// are identical for the tunnel and for its diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SshPurpose {
+    /// The tunnel itself: `-N -T -o ExitOnForwardFailure=yes <-L|-R|-D> spec`.
+    Tunnel { forward: String },
+    /// Diagnostics: connect and authenticate only (`-N -T`, no forwarding).
+    AuthProbe,
+    /// Diagnostics: ask the server to open `host:port` (`-W`, stdio only,
+    /// no listening socket).
+    DestinationProbe { host: String, port: u16 },
+}
+
+/// Connect timeout for diagnostic probes, seconds.
+pub const PROBE_CONNECT_TIMEOUT_SECS: u64 = 5;
+
+/// Whether the effective ssh config for this profile goes through a proxy
+/// (ProxyJump / ProxyCommand from `-J` or from `~/.ssh/config`). Uses
+/// `ssh -G`, which only evaluates config and never connects.
+pub fn uses_proxy(config: &TunnelConfig) -> Result<bool, TunnelError> {
+    let mut argv = build_probe_argv(config, &SshPurpose::AuthProbe)?;
+    argv.insert(1, "-G".into());
+    let (program, args) = argv.split_first().expect("argv always has program");
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        cmd.creation_flags(0x08000000 /* CREATE_NO_WINDOW */);
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| TunnelError::SpawnFailed(format!("ssh -G: {e}")))?;
+    Ok(effective_config_uses_proxy(&String::from_utf8_lossy(
+        &out.stdout,
+    )))
+}
+
+/// Parse `ssh -G` output: `proxyjump X` / `proxycommand X` other than `none`.
+pub fn effective_config_uses_proxy(output: &str) -> bool {
+    output.lines().any(|line| {
+        let mut parts = line.splitn(2, ' ');
+        let key = parts.next().unwrap_or("").to_ascii_lowercase();
+        let value = parts.next().unwrap_or("").trim();
+        (key == "proxyjump" || key == "proxycommand")
+            && !value.is_empty()
+            && !value.eq_ignore_ascii_case("none")
+    })
+}
+
+/// argv for a diagnostic probe of a validated profile.
+pub fn build_probe_argv(
+    config: &TunnelConfig,
+    purpose: &SshPurpose,
+) -> Result<Vec<OsString>, TunnelError> {
+    config.validate()?;
+    Ok(assemble_argv(
+        ssh_binary(),
+        config,
+        purpose,
         config.ssh_target.clone(),
     ))
 }
@@ -90,7 +155,9 @@ pub fn preview_args(config: &TunnelConfig) -> Vec<String> {
     assemble_argv(
         OsString::from("ssh"),
         config,
-        config.forward_display(),
+        &SshPurpose::Tunnel {
+            forward: config.forward_display(),
+        },
         target,
     )
     .into_iter()
@@ -102,27 +169,38 @@ pub fn preview_args(config: &TunnelConfig) -> Vec<String> {
 fn assemble_argv(
     program: OsString,
     config: &TunnelConfig,
-    forward: String,
+    purpose: &SshPurpose,
     target: String,
 ) -> Vec<OsString> {
-    let flag = match config.mode {
-        crate::tunnel::TunnelMode::Local => "-L",
-        crate::tunnel::TunnelMode::Remote => "-R",
-        crate::tunnel::TunnelMode::Dynamic => "-D",
-    };
-    let mut argv: Vec<OsString> = vec![
-        program,
-        "-N".into(),
-        "-T".into(),
-        "-o".into(),
-        "ExitOnForwardFailure=yes".into(),
+    let mut argv: Vec<OsString> = vec![program];
+    match purpose {
+        SshPurpose::Tunnel { .. } => argv.extend([
+            "-N".into(),
+            "-T".into(),
+            "-o".into(),
+            "ExitOnForwardFailure=yes".into(),
+        ]),
+        SshPurpose::AuthProbe => argv.extend(["-N".into(), "-T".into()]),
+        SshPurpose::DestinationProbe { .. } => argv.push("-T".into()),
+    }
+    argv.extend([
         "-o".into(),
         "BatchMode=yes".into(),
         "-o".into(),
         format!("ServerAliveInterval={}", config.keep_alive_interval).into(),
         "-o".into(),
         format!("ServerAliveCountMax={DEFAULT_ALIVE_COUNT_MAX}").into(),
-    ];
+    ]);
+    if !matches!(purpose, SshPurpose::Tunnel { .. }) {
+        // Probes need ssh's own progress lines: "Authenticated to ..."
+        // (VERBOSE) and "channel N: open confirm" (DEBUG2).
+        argv.extend([
+            "-o".into(),
+            format!("ConnectTimeout={PROBE_CONNECT_TIMEOUT_SECS}").into(),
+            "-o".into(),
+            "LogLevel=DEBUG2".into(),
+        ]);
+    }
     if let Some(jump) = config
         .proxy_jump
         .as_deref()
@@ -131,8 +209,27 @@ fn assemble_argv(
         argv.push("-J".into());
         argv.push(jump.trim().to_owned().into());
     }
-    argv.push(flag.into());
-    argv.push(forward.into());
+    match purpose {
+        SshPurpose::Tunnel { forward } => {
+            let flag = match config.mode {
+                crate::tunnel::TunnelMode::Local => "-L",
+                crate::tunnel::TunnelMode::Remote => "-R",
+                crate::tunnel::TunnelMode::Dynamic => "-D",
+            };
+            argv.push(flag.into());
+            argv.push(forward.into());
+        }
+        SshPurpose::AuthProbe => {}
+        SshPurpose::DestinationProbe { host, port } => {
+            argv.push("-W".into());
+            let host = if host.contains(':') {
+                format!("[{host}]")
+            } else {
+                host.clone()
+            };
+            argv.push(format!("{host}:{port}").into());
+        }
+    }
     if let Some(key) = config.identity_file.as_deref() {
         argv.push("-i".into());
         argv.push(key.into());
@@ -152,10 +249,28 @@ impl SshChild {
     /// receives stderr lines as they arrive (for logs + failure sniffing).
     pub fn spawn(config: &TunnelConfig) -> Result<(Self, Receiver<String>), TunnelError> {
         let argv = build_argv(config)?;
+        Self::spawn_argv(&argv, &config.id, Stdio::null())
+    }
+
+    /// Spawn a diagnostic probe. stdin is a held-open pipe so a `-W` probe
+    /// does not see EOF and tear the channel down before it is confirmed.
+    pub fn spawn_probe(
+        config: &TunnelConfig,
+        purpose: &SshPurpose,
+    ) -> Result<(Self, Receiver<String>), TunnelError> {
+        let argv = build_probe_argv(config, purpose)?;
+        Self::spawn_argv(&argv, &format!("probe-{}", config.id), Stdio::piped())
+    }
+
+    fn spawn_argv(
+        argv: &[OsString],
+        name: &str,
+        stdin: Stdio,
+    ) -> Result<(Self, Receiver<String>), TunnelError> {
         let (program, args) = argv.split_first().expect("argv always has program");
         let mut cmd = Command::new(program);
         cmd.args(args)
-            .stdin(Stdio::null())
+            .stdin(stdin)
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
         #[cfg(windows)]
@@ -172,7 +287,7 @@ impl SshChild {
             .ok_or_else(|| TunnelError::SpawnFailed("ssh stderr was not captured".to_owned()))?;
         let (tx, rx) = mpsc::channel();
         let handle = thread::Builder::new()
-            .name(format!("ssh-stderr-{}", config.id))
+            .name(format!("ssh-stderr-{name}"))
             .spawn(move || {
                 // Every line goes through the channel exactly once; the
                 // receiver is the only owner of stderr history.
@@ -321,6 +436,71 @@ mod tests {
         for arg in &args[1..] {
             assert!(!arg.contains("&&") && !arg.contains(';') && !arg.contains('|'));
         }
+    }
+
+    fn probe_strings(config: &TunnelConfig, purpose: &SshPurpose) -> Vec<String> {
+        build_probe_argv(config, purpose)
+            .unwrap()
+            .into_iter()
+            .skip(1)
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn effective_config_proxy_detection() {
+        assert!(effective_config_uses_proxy(
+            "user me\nproxyjump jump-host\nport 22\n"
+        ));
+        assert!(effective_config_uses_proxy(
+            "proxycommand ssh -W %h:%p jump\n"
+        ));
+        assert!(!effective_config_uses_proxy(
+            "user me\nproxyjump none\nport 22\n"
+        ));
+        assert!(!effective_config_uses_proxy("user me\nport 22\n"));
+    }
+
+    #[test]
+    fn probes_share_identity_jump_and_batch_mode_but_never_forward() {
+        let mut config = local_config();
+        config.proxy_jump = Some("jump-host".to_owned());
+        let auth = probe_strings(&config, &SshPurpose::AuthProbe);
+        let dest = probe_strings(
+            &config,
+            &SshPurpose::DestinationProbe {
+                host: "postgres.internal".into(),
+                port: 5432,
+            },
+        );
+        for args in [&auth, &dest] {
+            for needed in [
+                "BatchMode=yes",
+                "-J",
+                "jump-host",
+                "-i",
+                "~/.ssh/id_ed25519",
+                "ConnectTimeout=5",
+                "LogLevel=DEBUG2",
+            ] {
+                assert!(
+                    args.iter().any(|a| a == needed),
+                    "{needed} missing in {args:?}"
+                );
+            }
+            for forbidden in ["-L", "-R", "-D", "ExitOnForwardFailure=yes"] {
+                assert!(
+                    !args.iter().any(|a| a == forbidden),
+                    "{forbidden} in {args:?}"
+                );
+            }
+            assert_eq!(args.last().map(String::as_str), Some("dev-bastion"));
+        }
+        assert!(auth.contains(&"-N".to_owned()));
+        let w = dest.iter().position(|a| a == "-W").expect("-W");
+        assert_eq!(dest[w + 1], "postgres.internal:5432");
+        // The tunnel argv itself is unchanged by probe support.
+        assert!(!argv_strings(&config).iter().any(|a| a == "LogLevel=DEBUG2"));
     }
 
     #[test]

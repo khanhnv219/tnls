@@ -529,6 +529,52 @@ impl<S: Spawner> TunnelManager<S> {
         self.ports = probe;
     }
 
+    /// Diagnostics stage 2, read-only: is the local endpoint usable? When
+    /// this tunnel is running the port is expectedly held by its own ssh,
+    /// so the question becomes whether it accepts connections.
+    pub fn local_forward_verdict(&mut self, id: &str) -> crate::diagnose::Verdict {
+        use crate::diagnose::Outcome;
+        let Some(config) = self.configs.get(id) else {
+            return (Outcome::Fail, format!("tunnel {id} not found"));
+        };
+        let endpoint = config.local_endpoint();
+        let own_pid = self
+            .runtimes
+            .get(id)
+            .filter(|rt| rt.child.is_some())
+            .and_then(|rt| rt.status.pid);
+        if let Some(pid) = own_pid {
+            return if self.checker.check(&endpoint) {
+                (
+                    Outcome::Pass,
+                    format!(
+                        "{endpoint} is held by this tunnel (pid {pid}) and accepting connections"
+                    ),
+                )
+            } else {
+                (
+                    Outcome::Fail,
+                    format!("{endpoint} is held by this tunnel (pid {pid}) but not accepting connections"),
+                )
+            };
+        }
+        match self.check_conflict(id) {
+            Ok(()) => (
+                Outcome::Pass,
+                format!("{endpoint} is free and can be bound"),
+            ),
+            Err(err) => (Outcome::Fail, err.to_string()),
+        }
+    }
+
+    /// Append a tnls line to a tunnel's log without touching its state.
+    pub fn append_log(&mut self, id: &str, line: LogLine) {
+        self.runtimes
+            .entry(id.to_owned())
+            .or_insert_with(|| Runtime::fresh(id))
+            .push_line(line);
+    }
+
     pub fn upsert_config(&mut self, config: TunnelConfig) -> bool {
         config
             .validate()

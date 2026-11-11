@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar } from "./components/BulkBar";
 import { CloseAppModal } from "./components/CloseAppModal";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
+import { DiagnoseModal } from "./components/DiagnoseModal";
 import { Drawer } from "./components/Drawer";
 import { Icon } from "./components/Icon";
 import { ImportJsonModal } from "./components/ImportJsonModal";
@@ -112,6 +113,7 @@ export default function App() {
   const [deleteTargets, setDeleteTargets] = useState<TunnelRow[] | null>(null);
   const [conflict, setConflict] = useState<(ConflictView & { tunnelId: string }) | null>(null);
   const [formFocus, setFormFocus] = useState<"name" | "localPort">("name");
+  const [diagTarget, setDiagTarget] = useState<{ id: string; name: string } | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
   const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
@@ -846,6 +848,7 @@ export default function App() {
               }}
               onDuplicate={handleDuplicate}
               onShowLogs={setLogTarget}
+              onDiagnose={(row) => setDiagTarget({ id: row.id, name: row.name })}
               onCreate={openNew}
               onImportSsh={handleImportSsh}
               onClearQuery={() => {
@@ -866,6 +869,8 @@ export default function App() {
           />
         </main>
       </div>
+
+      <DiagnoseModal target={diagTarget} onClose={() => setDiagTarget(null)} notify={toast} />
 
       <PortConflictModal
         view={conflict}
@@ -901,6 +906,7 @@ export default function App() {
             tunnelName={logTarget.name}
             onClose={closeLogs}
             notify={toast}
+            onDiagnose={() => setDiagTarget({ id: logTarget.id, name: logTarget.name })}
           />
         )}
       </Drawer>

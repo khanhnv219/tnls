@@ -207,3 +207,107 @@ textarea.input {
   padding-left: var(--s-2);
   border-left: 1px solid var(--line);
 }
+
+/* ==========================================================================
+   Diagnostics dialog (P1.1). Composed from the modal + badge recipes.
+   ========================================================================== */
+
+.modal--wide {
+  width: min(600px, calc(100vw - 32px));
+}
+
+.diag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ground-2);
+}
+
+.diag-stage {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.diag-stage:last-child {
+  border-bottom: 0;
+}
+
+.diag-stage__index {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: var(--r-xs);
+  background: var(--ground-3);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-3);
+}
+
+.diag-stage__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.diag-stage__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-emphasize);
+  color: var(--text-1);
+}
+
+.diag-stage__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  font-weight: var(--weight-read);
+}
+
+.diag-stage__reason {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.diag-stage[data-outcome="fail"] .diag-stage__reason {
+  color: var(--danger);
+}
+
+.diag-stage[data-outcome="pending"] .diag-stage__reason,
+.diag-stage[data-outcome="notRun"] .diag-stage__reason,
+.diag-stage[data-outcome="skipped"] .diag-stage__reason {
+  color: var(--text-3);
+}
+
+.diag-stage__detail {
+  margin: var(--s-1) 0 0;
+  padding: var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--log-bg);
+  color: var(--log-text);
+  font-size: var(--text-2xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diag-verdict {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ok);
+}

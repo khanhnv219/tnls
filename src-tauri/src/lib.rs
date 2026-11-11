@@ -37,6 +37,7 @@ pub fn run() {
             commands::take_over_port,
             commands::get_tunnel_logs,
             commands::preview_ssh_command,
+            commands::diagnose_tunnel,
             commands::hide_to_tray,
             commands::quit_app,
             commands::get_runtime_status,

@@ -46,11 +46,13 @@ export function LogDrawer({
   tunnelName,
   onClose,
   notify,
+  onDiagnose,
 }: {
   tunnelId: string;
   tunnelName: string;
   onClose: () => void;
   notify: PushToast;
+  onDiagnose: () => void;
 }) {
   const [lines, setLines] = useState<LogLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +159,15 @@ export function LogDrawer({
             {tunnelName}
           </h2>
         </div>
+        <button
+          className="btn btn--sm btn--ghost"
+          type="button"
+          title="Check SSH auth, local forward and destination (read-only)"
+          onClick={onDiagnose}
+        >
+          <Icon name="layers" size={13} />
+          Diagnose
+        </button>
         <button
           className="btn btn--icon"
           type="button"

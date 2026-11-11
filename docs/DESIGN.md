@@ -113,6 +113,30 @@ CREATE TABLE tunnels (
 -- v4: tags TEXT NOT NULL DEFAULT '[]'   -- JSON array of strings
 ```
 
+### 6.1 Diagnostics (read-only)
+
+`diagnose_tunnel` chạy 3 bước theo thứ tự, dừng ở bước fail đầu tiên. Không start/stop/
+restart tunnel, không đổi state đã lưu. Mọi lệnh ssh đi qua `ssh::assemble_argv` (cùng
+identity file, ProxyJump, BatchMode, keepalive với tunnel thật), kết quả exit qua
+`ssh::classify_exit`.
+
+| Bước | Cách làm | Pass khi |
+|---|---|---|
+| 1. SSH auth / reachability | `ssh -N -T -o ConnectTimeout=5 -o LogLevel=DEBUG2 …` (không forward) | dòng `Authenticated to …` của kết nối chính |
+| 2. Local forward | kiểm tra port như lúc start (tunnel khác + OS); nếu chính tunnel này đang chạy thì dial port | port trống, hoặc đang do chính tunnel giữ và nhận kết nối |
+| 3. Destination | `ssh -T -W host:port …` (stdio, không mở listener) | dòng `channel N: open confirm` sau dòng auth |
+
+Bước 3 phân biệt timeout / connection refused / DNS / no route / bị server cấm forward từ
+thông điệp `open failed:` của server. `-D` bỏ qua bước 3 (không có đích cố định); `-R` bỏ
+qua bước 2 (listener ở phía server) và dial đích từ máy này. Khi đi qua ProxyJump
+(`-J` hoặc từ `~/.ssh/config`, xác định bằng `ssh -G`), chỉ dòng `Authenticated to … (via
+proxy)` mới là kết nối chính; dòng auth/channel của hop trung gian bị bỏ qua. Mỗi bước
+ghi một dòng log `tnls: diagnose N/3 …` với level từ backend (PASS = INFO, FAIL = ERROR,
+SKIP = DEBUG), và gửi event `tunnel://diagnose-stage` để UI hiện từng bước khi xong.
+
+Giới hạn: passphrase lưu trong keychain hiện chưa được đưa cho ssh (cả tunnel lẫn
+diagnostics, vì `BatchMode=yes`); key có passphrase cần ssh-agent.
+
 ### 7.1 Tags (v4)
 
 Chọn **nhiều tag cho mỗi tunnel**, lưu dạng mảng JSON trong cột `tags` của bảng
