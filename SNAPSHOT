@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-11-09 (re-sync: 38 commits, UI redesign theo design system)
-Status: UI redesign xong (phase 1–4); phase 5 (SSH preview + log timestamp/level ở backend) chờ quyết định
-Current phase: UI redesign DONE (frontend) — Phase 2 DONE (6/6), Phase 3 (russh) gác
+Last updated: 2026-11-09 (re-sync: 44 commits, phase 5 + close-to-tray prompt)
+Status: UI redesign xong (phase 1–5); nút đóng hỏi minimize-to-tray / quit
+Current phase: UI redesign DONE — Phase 2 DONE (6/6), Phase 3 (russh) gác
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -60,7 +60,13 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 | 35 | 20351e8 feat(ui): JSON import dialog replaces prompt() | ImportJsonModal | DONE |
 | 36 | 12249b4 fix(ui): keep table columns aligned when narrow columns drop | overrides.css | DONE |
 | 37 | 2c43bd1 chore(tauri): open at 1280x800 with a 720x480 minimum | tauri.conf.json | DONE |
-| 38 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
+| 38 | 249af17 docs: re-sync snapshot after UI redesign | SNAPSHOT | DONE |
+| 39 | e11e9cc test(core): use ephemeral ports in manager tests | manager.rs tests (Windows excluded port ranges) | DONE |
+| 40 | 22e9925 fix(core): stop duplicating stderr lines in logs when ssh exits | ssh.rs pump, RealChild::reap | DONE |
+| 41 | 23a1fbb feat(logs): timestamp and level for each tunnel log line | core logs.rs, manager, get_tunnel_logs, LogDrawer | DONE |
+| 42 | a801158 feat(form): live ssh command preview from the backend | ssh::preview_args, preview_ssh_command, CommandPreview | DONE |
+| 43 | d1d3aca feat(tray): ask to minimize to tray or quit on window close | tray.rs, hide_to_tray/quit_app, CloseAppModal | DONE |
+| 44 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
 
 > Lưu ý: commit 24 và 25 có message trùng phần "Phase 2: Retry policy UI" do re-apply sau khi sửa ssh.rs; commit 25 thực chất là fix console window (diff duy nhất: `src-tauri/crates/core/src/ssh.rs` + `SNAPSHOT`).
 
@@ -92,6 +98,15 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 - [2026-10-10] Phase 2: Retry policy UI per-tunnel (commit 24 — 1694415).
 - [2026-10-10] Fix: suppress console window for ssh on Windows (commit 25 — 748512e).
 - [2026-11-09] UI redesign theo design system OpenDesign (commits 27–37): tokens/app.css giữ nguyên bản export, icon sprite, theme dark/light, topbar + overflow menu, bảng mới (rail, mode chip, copy, badge 7 state), multi-select + bulk bar, modal xoá, form drawer chia section, log drawer kiểu console, dialog import JSON, cửa sổ 1280x800.
+- [2026-11-09] User xác nhận redesign chạy với data thật (`npm run tauri dev`).
+- [2026-11-09] Phase 5 + tray (commits 39–43): test dùng port ephemeral; sửa log lặp khi ssh thoát; log có timestamp + level từ backend; preview lệnh ssh trong form dùng chung code với build_argv; nút đóng hỏi minimize-to-tray / quit (nhớ lựa chọn, đổi trong menu ⋯), tray mở lại window, stop tunnel ở mọi đường exit.
+
+## Changed files (commits 39–43)
+
+- src-tauri/crates/core/src: logs.rs (mới: LogLine, LogLevel, classify_level), manager.rs (ring buffer LogLine, RealChild::reap, test ports), ssh.rs (pump không giữ bản sao, assemble_argv, preview_args), tunnel/mod.rs (into_draft, forward_display), lib.rs
+- src-tauri/src: commands.rs (get_tunnel_logs → LogLine, preview_ssh_command, hide_to_tray, quit_app), tray.rs (close → app://close-requested, on_exit, unminimize), lib.rs (build + run với RunEvent::Exit)
+- src: components/CommandPreview.tsx, components/CloseAppModal.tsx, lib/closeAction.ts, lib/logs.ts, lib/api.ts, components/LogDrawer.tsx, components/TunnelForm.tsx, App.tsx, styles/overrides.css
+- docs/DESIGN.md (quyết định 11: nút đóng hỏi tray/quit)
 
 ## Changed files (commits 27–37)
 
@@ -102,13 +117,14 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 - src-tauri/tauri.conf.json (window 1280x800, min 720x480)
 - docs/DESIGN_BRIEF.md, docs/DESIGN_SYSTEM.md, docs/design-system.html, .gitignore (bỏ qua thư mục export)
 
-## Checks (commit 37 — HEAD)
+## Checks (commit 43 — HEAD)
 
-- `npx tsc --noEmit`: OK.
-- `npm run build`: OK (41 modules).
-- `cargo check --workspace` (MSVC): OK.
-- Kiểm tra giao diện bằng ảnh chụp headless Edge với backend giả (không commit): dark/light, chọn nhiều dòng, modal xoá, form (lỗi validate, edit + Advanced), log drawer (lọc, level), menu, import JSON, empty/no-match, 700/800/1100/1440px.
-- Chưa chạy `npm run tauri dev` với backend thật sau redesign.
+- `cargo test -p tnls-core`: OK, 52 passed / 0 failed (trước commit 39: 12 test manager fail trên máy có Hyper-V excluded port range 54231–54530).
+- `cargo clippy --workspace --all-targets -- -D warnings`: OK.
+- `cargo fmt --all -- --check`: OK.
+- `npx tsc --noEmit`: OK; `npm run build`: OK (44 modules).
+- Ảnh chụp headless Edge với backend giả: log drawer có giờ/level, preview lệnh (form mới có placeholder, form edit đủ argv với -J), dialog đóng app (dark/light).
+- Chưa test bằng tay trên app thật: bấm nút X (dialog), Minimize → mở lại từ tray, Quit → không còn ssh.exe, Remember + đổi lại trong menu ⋯.
 
 ## Known issues
 
@@ -119,6 +135,6 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 
 ## Next
 
-- Chạy `npm run tauri dev` để kiểm tra redesign với backend thật (start/stop, sự kiện, keychain, autostart).
-- Phase 5 (chờ quyết định): command `preview_ssh_command` dùng `ssh::build_argv` cho ô preview trong form; lưu timestamp + level cho mỗi dòng log ở `manager.rs` (hiện log drawer hiển thị số dòng và đoán level ở frontend).
+- Test tay luồng đóng app trên app thật (xem Checks).
 - Còn thiếu so với design: nút Browse cho identity file (cần plugin dialog), font Söhne/JetBrains Mono (đang fallback Segoe UI / Cascadia Mono).
+- Timestamp log là thời điểm supervisor gom dòng (≤250 ms sau khi ssh ghi); nếu cần chính xác hơn thì stamp trong thread đọc stderr.
