@@ -1,8 +1,11 @@
 name: ci
 
+# Runs only when a release tag is pushed (e.g. `git push origin v0.2.0`).
+# Plain pushes and pull requests no longer trigger CI.
 on:
   push:
-  pull_request:
+    tags:
+      - "v*"
 
 jobs:
   rust:

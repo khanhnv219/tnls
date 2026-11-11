@@ -129,9 +129,11 @@ cd ..
 npx tsc --noEmit
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) chạy fmt, test core,
-clippy và `cargo check` trên Windows, macOS và Ubuntu, cùng với typecheck và
-build frontend.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) chỉ chạy khi push
+một release tag dạng `v*` (ví dụ `git push origin v0.2.0`). CI chạy fmt, test
+core, clippy và `cargo check` trên Windows, macOS và Ubuntu, cùng với typecheck
+và build frontend. Push thường và pull request không kích hoạt CI, nên hãy chạy
+các lệnh ở trên trên máy trước khi push.
 
 ## Kiến trúc
 

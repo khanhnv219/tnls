@@ -129,9 +129,11 @@ cd ..
 npx tsc --noEmit
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs fmt, the core
-tests, clippy and `cargo check` on Windows, macOS and Ubuntu, plus the frontend
-typecheck and build.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs only when a
+release tag matching `v*` is pushed (e.g. `git push origin v0.2.0`). It runs fmt,
+the core tests, clippy and `cargo check` on Windows, macOS and Ubuntu, plus the
+frontend typecheck and build. Pushes and pull requests do not trigger it, so run
+the commands above locally before you push.
 
 ## Architecture
 
