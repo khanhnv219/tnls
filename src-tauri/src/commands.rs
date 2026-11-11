@@ -82,6 +82,26 @@ pub fn get_tunnel_logs(
         .map_err(err_text)
 }
 
+/// The ssh invocation a (possibly half-filled) form would produce.
+#[derive(serde::Serialize)]
+pub struct CommandPreview {
+    /// Resolved ssh binary, e.g. `C:\Windows\System32\OpenSSH\ssh.exe`.
+    program: String,
+    /// Arguments after the program; missing values appear as `<placeholders>`.
+    args: Vec<String>,
+}
+
+/// Display-only preview built by the same code that spawns ssh. Nothing is
+/// stored or executed.
+#[tauri::command]
+pub fn preview_ssh_command(input: TunnelInput) -> CommandPreview {
+    let draft = input.into_draft();
+    CommandPreview {
+        program: tnls_core::ssh::ssh_binary().to_string_lossy().into_owned(),
+        args: tnls_core::ssh::preview_args(&draft),
+    }
+}
+
 #[tauri::command]
 pub fn get_runtime_status(state: State<'_, AppState>) -> Result<Vec<TunnelStatus>, String> {
     Ok(state.manager()?.statuses())

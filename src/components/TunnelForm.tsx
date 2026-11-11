@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { deletePassphrase, getPassphraseState } from "../lib/api";
 import type { TunnelConfig, TunnelInput, TunnelMode } from "../lib/types";
+import { CommandPreview } from "./CommandPreview";
 import { Icon } from "./Icon";
 import type { PushToast } from "./Toasts";
 
@@ -159,6 +160,21 @@ export function TunnelForm({
   });
 
   const needsRemote = values.mode !== "dynamic";
+
+  // Best-effort input for the command preview: invalid numbers become
+  // "missing" so the backend renders a placeholder instead of rejecting.
+  const previewInput: TunnelInput = {
+    name: values.name,
+    mode: values.mode,
+    sshTarget: values.sshTarget,
+    bindAddress: values.bindAddress,
+    localPort: isPort(values.localPort) ? Number(values.localPort.trim()) : 0,
+    remoteHost: needsRemote ? values.remoteHost : null,
+    remotePort: needsRemote && isPort(values.remotePort) ? Number(values.remotePort.trim()) : null,
+    identityFile: identityFile.trim() === "" ? null : identityFile,
+    proxyJump: proxyJump.trim() === "" ? null : proxyJump,
+    keepAliveInterval: isPort(values.keepAlive) ? Number(values.keepAlive.trim()) : null,
+  };
 
   useEffect(() => {
     // Wait for the drawer to slide in before moving focus into it.
@@ -392,6 +408,8 @@ export function TunnelForm({
                 </div>
               </div>
             )}
+
+            <CommandPreview input={previewInput} />
           </section>
 
           <section className="section advanced">

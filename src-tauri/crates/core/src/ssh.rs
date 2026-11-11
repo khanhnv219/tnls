@@ -70,13 +70,48 @@ pub fn probe_ssh() -> Result<String, TunnelError> {
 pub fn build_argv(config: &TunnelConfig) -> Result<Vec<OsString>, TunnelError> {
     config.validate()?;
     let forward = config.forward_spec()?;
+    Ok(assemble_argv(
+        ssh_binary(),
+        config,
+        forward,
+        config.ssh_target.clone(),
+    ))
+}
+
+/// Arguments (without the program) for the form's command preview. Uses the
+/// same assembly as [`build_argv`], so a valid profile previews exactly the
+/// argv that will be spawned; missing values show as `<placeholders>`.
+/// Display only: never pass the result to [`Command`].
+pub fn preview_args(config: &TunnelConfig) -> Vec<String> {
+    let target = match config.ssh_target.trim() {
+        "" => "<ssh-target>".to_owned(),
+        t => t.to_owned(),
+    };
+    assemble_argv(
+        OsString::from("ssh"),
+        config,
+        config.forward_display(),
+        target,
+    )
+    .into_iter()
+    .skip(1)
+    .map(|a| a.to_string_lossy().into_owned())
+    .collect()
+}
+
+fn assemble_argv(
+    program: OsString,
+    config: &TunnelConfig,
+    forward: String,
+    target: String,
+) -> Vec<OsString> {
     let flag = match config.mode {
         crate::tunnel::TunnelMode::Local => "-L",
         crate::tunnel::TunnelMode::Remote => "-R",
         crate::tunnel::TunnelMode::Dynamic => "-D",
     };
     let mut argv: Vec<OsString> = vec![
-        ssh_binary(),
+        program,
         "-N".into(),
         "-T".into(),
         "-o".into(),
@@ -102,8 +137,8 @@ pub fn build_argv(config: &TunnelConfig) -> Result<Vec<OsString>, TunnelError> {
         argv.push("-i".into());
         argv.push(key.into());
     }
-    argv.push(config.ssh_target.clone().into());
-    Ok(argv)
+    argv.push(target.into());
+    argv
 }
 
 /// A spawned ssh child with a background stderr pump.
@@ -285,6 +320,43 @@ mod tests {
         for arg in &args[1..] {
             assert!(!arg.contains("&&") && !arg.contains(';') && !arg.contains('|'));
         }
+    }
+
+    #[test]
+    fn preview_matches_spawned_argv_for_valid_profiles() {
+        let mut remote = local_config();
+        remote.mode = TunnelMode::Remote;
+        let mut dynamic = local_config();
+        dynamic.mode = TunnelMode::Dynamic;
+        let mut jumped = local_config();
+        jumped.proxy_jump = Some("jump-host".to_owned());
+        for config in [local_config(), remote, dynamic, jumped] {
+            assert_eq!(preview_args(&config), argv_strings(&config)[1..].to_vec());
+        }
+    }
+
+    #[test]
+    fn preview_marks_missing_values_with_placeholders() {
+        let draft = TunnelInput {
+            name: String::new(),
+            mode: TunnelMode::Local,
+            ssh_target: "  ".to_owned(),
+            bind_address: None,
+            local_port: 0,
+            remote_host: None,
+            remote_port: None,
+            identity_file: None,
+            proxy_jump: None,
+            auto_start: None,
+            keep_alive_interval: None,
+            max_retries: None,
+            retry_delay_secs: None,
+        }
+        .into_draft();
+        let args = preview_args(&draft);
+        assert!(args.contains(&"127.0.0.1:<port>:<host>:<port>".to_owned()));
+        assert_eq!(args.last().map(String::as_str), Some("<ssh-target>"));
+        assert!(build_argv(&draft).is_err());
     }
 
     #[test]

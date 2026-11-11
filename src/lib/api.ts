@@ -46,6 +46,18 @@ export async function getTunnelLogs(
   return invoke("get_tunnel_logs", { id, limit: limit ?? null });
 }
 
+export interface CommandPreview {
+  /** Resolved ssh binary path. */
+  program: string;
+  /** Arguments after the program; missing values appear as `<placeholders>`. */
+  args: string[];
+}
+
+/** Display-only: the argv the backend would spawn for this (draft) input. */
+export async function previewSshCommand(input: TunnelInput): Promise<CommandPreview> {
+  return invoke("preview_ssh_command", { input });
+}
+
 export async function getRuntimeStatus(): Promise<TunnelStatus[]> {
   return invoke("get_runtime_status");
 }

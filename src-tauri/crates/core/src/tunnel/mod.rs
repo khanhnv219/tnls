@@ -125,8 +125,16 @@ pub struct TunnelInput {
 impl TunnelInput {
     /// Fill defaults, assign id + timestamps, then validate.
     pub fn into_config(self) -> Result<TunnelConfig, TunnelError> {
+        let config = self.into_draft();
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Same normalization as [`Self::into_config`] without validation, for
+    /// previews of a half-filled form. Never persist or spawn a draft.
+    pub fn into_draft(self) -> TunnelConfig {
         let now = Utc::now();
-        let config = TunnelConfig {
+        TunnelConfig {
             id: Uuid::new_v4().to_string(),
             name: self.name.trim().to_owned(),
             mode: self.mode,
@@ -156,9 +164,7 @@ impl TunnelInput {
             retry_delay_secs: self.retry_delay_secs.unwrap_or(1),
             created_at: now,
             updated_at: now,
-        };
-        config.validate()?;
-        Ok(config)
+        }
     }
 }
 
@@ -210,37 +216,46 @@ impl TunnelConfig {
 
     /// `-L bind:local:host:port` / `-R bind:port:host:port` / `-D bind:port`.
     pub fn forward_spec(&self) -> Result<String, TunnelError> {
+        if matches!(self.mode, TunnelMode::Local | TunnelMode::Remote) {
+            if self.remote_host.as_deref().unwrap_or("").trim().is_empty() {
+                return Err(TunnelError::MissingRemoteHost);
+            }
+            if self.remote_port.unwrap_or(0) == 0 {
+                return Err(TunnelError::InvalidPort("remotePort".to_owned()));
+            }
+        }
+        Ok(self.forward_display())
+    }
+
+    /// The forward spec as text, with `<host>` / `<port>` placeholders for
+    /// missing parts. Equal to [`Self::forward_spec`] for a valid config;
+    /// used on its own only for the form's command preview.
+    pub fn forward_display(&self) -> String {
+        let port = |p: u16| {
+            if p == 0 {
+                "<port>".to_owned()
+            } else {
+                p.to_string()
+            }
+        };
+        let bind = if self.bind_address.trim().is_empty() {
+            "<bind>"
+        } else {
+            self.bind_address.as_str()
+        };
+        let host = self
+            .remote_host
+            .as_deref()
+            .map(str::trim)
+            .filter(|h| !h.is_empty())
+            .unwrap_or("<host>");
+        let remote_port = port(self.remote_port.unwrap_or(0));
+        let local_port = port(self.local_port);
         match self.mode {
-            TunnelMode::Local => {
-                let host = self.remote_host.as_deref().unwrap_or("").trim();
-                let port = self.remote_port.unwrap_or(0);
-                if host.is_empty() {
-                    return Err(TunnelError::MissingRemoteHost);
-                }
-                if port == 0 {
-                    return Err(TunnelError::InvalidPort("remotePort".to_owned()));
-                }
-                Ok(format!(
-                    "{}:{}:{}:{}",
-                    self.bind_address, self.local_port, host, port
-                ))
-            }
-            TunnelMode::Remote => {
-                let host = self.remote_host.as_deref().unwrap_or("").trim();
-                let port = self.remote_port.unwrap_or(0);
-                if host.is_empty() {
-                    return Err(TunnelError::MissingRemoteHost);
-                }
-                if port == 0 {
-                    return Err(TunnelError::InvalidPort("remotePort".to_owned()));
-                }
-                // Remote: remote side listens at bind:port, forwards to host:local_port.
-                Ok(format!(
-                    "{}:{}:{}:{}",
-                    self.bind_address, port, host, self.local_port
-                ))
-            }
-            TunnelMode::Dynamic => Ok(format!("{}:{}", self.bind_address, self.local_port)),
+            TunnelMode::Local => format!("{bind}:{local_port}:{host}:{remote_port}"),
+            // Remote: remote side listens at bind:port, forwards to host:local_port.
+            TunnelMode::Remote => format!("{bind}:{remote_port}:{host}:{local_port}"),
+            TunnelMode::Dynamic => format!("{bind}:{local_port}"),
         }
     }
 

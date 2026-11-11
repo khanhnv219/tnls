@@ -35,6 +35,7 @@ pub fn run() {
             commands::stop_tunnel,
             commands::restart_tunnel,
             commands::get_tunnel_logs,
+            commands::preview_ssh_command,
             commands::get_runtime_status,
             commands::get_passphrase_state,
             commands::set_passphrase,
