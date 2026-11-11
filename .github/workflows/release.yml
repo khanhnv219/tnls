@@ -1,0 +1,89 @@
+name: release
+
+# Push a version tag to build installers and create a draft GitHub Release:
+#   git tag v0.2.0 && git push origin v0.2.0
+# The tag must match "version" in src-tauri/tauri.conf.json (v + version).
+# Tests are not run here; use the "test" workflow (manual) for that.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  verify-version:
+    name: tag matches app version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: compare tag with tauri.conf.json
+        run: |
+          app_version="$(jq -r .version src-tauri/tauri.conf.json)"
+          if [ "${GITHUB_REF_NAME}" != "v${app_version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match app version v${app_version} in src-tauri/tauri.conf.json"
+            exit 1
+          fi
+
+  publish:
+    name: build (${{ matrix.label }})
+    needs: verify-version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            label: windows x64
+            args: ""
+          - platform: macos-latest
+            label: macos arm64
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            label: macos x64
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            label: linux x64
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both macOS targets are built on the same arm64 runner.
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      # beforeBuildCommand in tauri.conf.json runs `npm run build`.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: tnls ${{ github.ref_name }}
+          releaseBody: |
+            Installers for Windows (NSIS .exe, .msi), macOS (.dmg, Apple Silicon and Intel) and Linux (.deb, .AppImage, .rpm).
+
+            The builds are not code-signed: Windows SmartScreen and macOS Gatekeeper will warn on first launch.
+            tnls needs an OpenSSH client (`ssh`) on PATH.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

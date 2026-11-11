@@ -66,9 +66,11 @@ in a local SQLite file.
 
 ## Install
 
-There is **no GitHub Release yet**, so you need to build tnls yourself (see
-[Build](#build)). The Windows build produces two installers in
-`src-tauri/target/release/bundle/`:
+Installers will be attached to
+[GitHub Releases](https://github.com/khanhnv219/tnls/releases) once a version
+is published (see [Release](#release)); none is published yet. Until then,
+build tnls yourself (see [Build](#build)). The Windows build produces two
+installers in `src-tauri/target/release/bundle/`:
 
 - `nsis/tnls_<version>_x64-setup.exe`
 - `msi/tnls_<version>_x64_en-US.msi`
@@ -129,11 +131,24 @@ cd ..
 npx tsc --noEmit
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs only when a
-release tag matching `v*` is pushed (e.g. `git push origin v0.2.0`). It runs fmt,
-the core tests, clippy and `cargo check` on Windows, macOS and Ubuntu, plus the
-frontend typecheck and build. Pushes and pull requests do not trigger it, so run
-the commands above locally before you push.
+The [`test`](.github/workflows/test.yml) workflow runs the same checks (fmt,
+core tests, clippy, `cargo check` on Windows, macOS and Ubuntu, plus the
+frontend typecheck and build). It only runs when started by hand from the
+Actions tab; pushes and pull requests do not trigger it, so run the commands
+above locally before you push.
+
+## Release
+
+Pushing a tag `v<version>` that matches `version` in
+`src-tauri/tauri.conf.json` runs the [`release`](.github/workflows/release.yml)
+workflow. It builds installers for Windows, macOS (Apple Silicon and Intel) and
+Linux and attaches them to a **draft** GitHub Release; publish the draft by hand.
+It does not run tests.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## Architecture
 

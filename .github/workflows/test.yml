@@ -1,11 +1,8 @@
-name: ci
+name: test
 
-# Runs only when a release tag is pushed (e.g. `git push origin v0.2.0`).
-# Plain pushes and pull requests no longer trigger CI.
+# Manual only: Actions tab -> "test" -> Run workflow.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 jobs:
   rust:
@@ -19,11 +16,18 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # Needed before `cargo check --workspace`, which builds the Tauri app crate.
+      - name: install linux webkit deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: "src-tauri -> target"
       - name: fmt
         run: cargo fmt -- --check
       - name: core tests
@@ -32,19 +36,13 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: check workspace
         run: cargo check --workspace
-      - name: install linux webkit deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
   frontend:
     name: frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm

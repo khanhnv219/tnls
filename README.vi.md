@@ -65,8 +65,10 @@ khoản cloud: profile nằm trong một file SQLite trên máy.
 
 ## Cài đặt
 
-Hiện **chưa có bản phát hành (GitHub Release)**, nên bạn cần tự build tnls
-(xem [Build](#build)). Bản build Windows tạo ra hai bộ cài trong
+Bộ cài sẽ được đính kèm ở
+[GitHub Releases](https://github.com/khanhnv219/tnls/releases) khi có phiên bản
+được publish (xem [Release](#release)); hiện chưa có bản nào. Trước đó, bạn cần
+tự build tnls (xem [Build](#build)). Bản build Windows tạo ra hai bộ cài trong
 `src-tauri/target/release/bundle/`:
 
 - `nsis/tnls_<version>_x64-setup.exe`
@@ -129,11 +131,24 @@ cd ..
 npx tsc --noEmit
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) chỉ chạy khi push
-một release tag dạng `v*` (ví dụ `git push origin v0.2.0`). CI chạy fmt, test
-core, clippy và `cargo check` trên Windows, macOS và Ubuntu, cùng với typecheck
-và build frontend. Push thường và pull request không kích hoạt CI, nên hãy chạy
-các lệnh ở trên trên máy trước khi push.
+Workflow [`test`](.github/workflows/test.yml) chạy cùng các bước kiểm tra (fmt,
+test core, clippy, `cargo check` trên Windows, macOS và Ubuntu, cùng typecheck
+và build frontend). Workflow này chỉ chạy khi được bấm tay trong tab Actions;
+push và pull request không kích hoạt nó, nên hãy chạy các lệnh ở trên trên máy
+trước khi push.
+
+## Release
+
+Push một tag `v<version>` khớp với `version` trong `src-tauri/tauri.conf.json`
+sẽ chạy workflow [`release`](.github/workflows/release.yml). Workflow build bộ
+cài cho Windows, macOS (Apple Silicon và Intel) và Linux rồi đính kèm vào một
+GitHub Release dạng **draft**; bạn tự bấm publish bản draft. Workflow này không
+chạy test.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## Kiến trúc
 
