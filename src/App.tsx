@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BulkBar } from "./components/BulkBar";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
@@ -25,6 +26,7 @@ import {
   fireNotification,
   notifyForEvent,
 } from "./lib/notify";
+import { canStart, canStop } from "./lib/states";
 import { applyTheme, type Theme } from "./lib/theme";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
@@ -89,6 +91,8 @@ export default function App() {
   );
   const [deleteTargets, setDeleteTargets] = useState<TunnelRow[] | null>(null);
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const { items: toasts, push: toast } = useToasts();
   const prevStates = useRef<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -147,17 +151,47 @@ export default function App() {
           setDraft(null);
           setFormTarget(undefined);
           setLogTarget(null);
+        } else if (selection.size > 0) {
+          setSelection(new Set());
         } else if (query) {
           setQuery("");
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
         openNew();
+      } else if (
+        e.key === "Delete" &&
+        !inField &&
+        selection.size > 0 &&
+        formTarget === undefined &&
+        !logTarget &&
+        !document.querySelector("dialog[open]")
+      ) {
+        e.preventDefault();
+        setDeleteTargets(rows.filter((r) => selection.has(r.id)));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [query, formTarget, logTarget, openNew]);
+  }, [query, formTarget, logTarget, openNew, selection, rows]);
+
+  // Drop selected ids whose rows no longer exist (deleted elsewhere).
+  useEffect(() => {
+    setSelection((cur) => {
+      if (cur.size === 0) return cur;
+      const ids = new Set(rows.map((r) => r.id));
+      const next = new Set([...cur].filter((id) => ids.has(id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [rows]);
+
+  const selectRows = useCallback((ids: string[], selected: boolean) => {
+    setSelection((cur) => {
+      const next = new Set(cur);
+      ids.forEach((id) => (selected ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  }, []);
 
   const runAction = useCallback(
     async (id: string, action: (id: string) => Promise<unknown>) => {
@@ -291,25 +325,51 @@ export default function App() {
     }
   }, [autostart, toast]);
 
+  /** Run one action over the selected rows that are in a legal state for it. */
   const handleBulk = useCallback(
-    async (action: (id: string) => Promise<unknown>) => {
-      const ids = visibleRows.map((r) => r.id);
-      for (const id of ids) {
-        setPending((p) => ({ ...p, [id]: true }));
+    async (kind: "start" | "stop" | "restart") => {
+      const eligible = rows.filter(
+        (r) =>
+          selection.has(r.id) &&
+          (kind === "start"
+            ? canStart(r.status.state)
+            : kind === "stop"
+              ? canStop(r.status.state)
+              : true),
+      );
+      if (eligible.length === 0) {
+        toast(
+          kind === "start"
+            ? "All selected tunnels are already up"
+            : kind === "stop"
+              ? "None of the selected tunnels are running"
+              : "Nothing to restart",
+          "info",
+        );
+        return;
       }
-      for (const id of ids) {
+      const action =
+        kind === "start" ? startTunnel : kind === "stop" ? stopTunnel : restartTunnel;
+      const ids = eligible.map((r) => r.id);
+      setBulkBusy(true);
+      setPending((p) => ({ ...p, ...Object.fromEntries(ids.map((id) => [id, true])) }));
+      let failures = 0;
+      for (const row of eligible) {
         try {
-          await action(id);
+          await action(row.id);
         } catch (e) {
-          toast(String(e), "error");
+          failures += 1;
+          toast(`${row.name}: ${String(e)}`, "error");
         }
       }
-      for (const id of ids) {
-        setPending((p) => ({ ...p, [id]: false }));
-      }
+      setPending((p) => ({ ...p, ...Object.fromEntries(ids.map((id) => [id, false])) }));
+      setBulkBusy(false);
+      const verb = kind === "start" ? "Starting" : kind === "stop" ? "Stopping" : "Restarting";
+      const done = eligible.length - failures;
+      if (done > 0) toast(`${verb} ${plural(done, "tunnel")}`, "info");
       reload();
     },
-    [visibleRows, reload, toast],
+    [rows, selection, reload, toast],
   );
 
   const deleteContent = useMemo<ConfirmContent | null>(() => {
@@ -432,22 +492,12 @@ export default function App() {
           onNew={openNew}
         />
 
-        <main className="main">
+        <main className={`main${selection.size > 0 ? " has-bulk" : ""}`}>
           <div className="table-toolbar">
             <span className="results-note" aria-live="polite">
               {trimmedQuery !== "" &&
                 `${visibleRows.length} of ${rows.length} match "${trimmedQuery}"`}
             </span>
-            {rows.length > 1 && (
-              <>
-                <button className="btn btn--sm btn--ghost" onClick={() => handleBulk(startTunnel)}>
-                  Start all visible
-                </button>
-                <button className="btn btn--sm btn--ghost" onClick={() => handleBulk(stopTunnel)}>
-                  Stop all visible
-                </button>
-              </>
-            )}
             <div className="toolbar__spacer" />
             <div className="toolbar__hint">
               <kbd>/</kbd>
@@ -479,6 +529,8 @@ export default function App() {
               query={query}
               pending={pending}
               leaving={leaving}
+              selection={selection}
+              onSelect={selectRows}
               onStart={(id) => runAction(id, startTunnel)}
               onStop={(id) => runAction(id, stopTunnel)}
               onRestart={(id) => runAction(id, restartTunnel)}
@@ -498,6 +550,16 @@ export default function App() {
               }}
             />
           </div>
+
+          <BulkBar
+            count={selection.size}
+            busy={bulkBusy}
+            onStart={() => handleBulk("start")}
+            onStop={() => handleBulk("stop")}
+            onRestart={() => handleBulk("restart")}
+            onDelete={() => setDeleteTargets(rows.filter((r) => selection.has(r.id)))}
+            onClear={() => setSelection(new Set())}
+          />
         </main>
       </div>
 

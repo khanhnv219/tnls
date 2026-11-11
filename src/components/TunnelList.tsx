@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { canStart, canStop } from "../lib/states";
 import type { TunnelMode, TunnelRow } from "../lib/types";
 import { Icon } from "./Icon";
 import { Menu, type MenuEntry } from "./Menu";
@@ -14,19 +15,6 @@ const MODE_FLAG: Record<TunnelMode, string> = {
   local: "-L",
   remote: "-R",
   dynamic: "-D",
-};
-
-const STARTABLE: Record<string, true> = {
-  stopped: true,
-  failed: true,
-  unknown: true,
-};
-
-const STOPPABLE: Record<string, true> = {
-  starting: true,
-  running: true,
-  degraded: true,
-  unknown: true,
 };
 
 function formatUptime(startedAt: string | null | undefined, now: number): string | null {
@@ -111,6 +99,8 @@ export function TunnelList({
   query,
   pending,
   leaving,
+  selection,
+  onSelect,
   onStart,
   onStop,
   onRestart,
@@ -127,6 +117,8 @@ export function TunnelList({
   query: string;
   pending: Record<string, boolean>;
   leaving: ReadonlySet<string>;
+  selection: ReadonlySet<string>;
+  onSelect: (ids: string[], selected: boolean) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
@@ -141,12 +133,20 @@ export function TunnelList({
   const [now, setNow] = useState(() => Date.now());
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const hasLive = rows.some((r) => r.status.pid != null);
+  const checkAllRef = useRef<HTMLInputElement>(null);
+  const selectedVisible = rows.filter((r) => selection.has(r.id)).length;
+  const allSelected = rows.length > 0 && selectedVisible === rows.length;
+  const someSelected = selectedVisible > 0 && !allSelected;
 
   useEffect(() => {
     if (!hasLive) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [hasLive]);
+
+  useEffect(() => {
+    if (checkAllRef.current) checkAllRef.current.indeterminate = someSelected;
+  }, [someSelected, rows.length]);
 
   if (rows.length === 0) {
     const onboarding = totalCount === 0;
@@ -262,7 +262,14 @@ export function TunnelList({
         <thead>
           <tr>
             <th scope="col">
-              <span className="visually-hidden">Select</span>
+              <input
+                ref={checkAllRef}
+                type="checkbox"
+                className="check"
+                aria-label="Select all visible tunnels"
+                checked={allSelected}
+                onChange={(e) => onSelect(rows.map((r) => r.id), e.target.checked)}
+              />
             </th>
             <th scope="col">Name</th>
             <th scope="col">Mode</th>
@@ -279,18 +286,25 @@ export function TunnelList({
           {rows.map((row) => {
             const busy = pending[row.id] ?? false;
             const state = row.status.state;
-            const canStart = STARTABLE[state] === true && !busy;
-            const canStop = STOPPABLE[state] === true && !busy;
+            const startable = canStart(state) && !busy;
+            const stoppable = canStop(state) && !busy;
             const detail = detailText(row, now);
             const local = `${row.bindAddress}:${row.localPort}`;
+            const selected = selection.has(row.id);
+            const cls = [selected ? "is-selected" : "", leaving.has(row.id) ? "is-leaving" : ""]
+              .filter(Boolean)
+              .join(" ");
             return (
-              <tr
-                key={row.id}
-                data-id={row.id}
-                data-state={state}
-                className={leaving.has(row.id) ? "is-leaving" : undefined}
-              >
-                <td />
+              <tr key={row.id} data-id={row.id} data-state={state} className={cls || undefined}>
+                <td>
+                  <input
+                    type="checkbox"
+                    className="check"
+                    aria-label={`Select ${row.name}`}
+                    checked={selected}
+                    onChange={(e) => onSelect([row.id], e.target.checked)}
+                  />
+                </td>
                 <td className="cell-name">
                   <div className="name-stack">
                     <span className="name-stack__title">{row.name}</span>
@@ -326,7 +340,7 @@ export function TunnelList({
                 </td>
                 <td>
                   <div className="actions-cell">
-                    {canStart && (
+                    {startable && (
                       <button
                         className="act act--play"
                         type="button"
@@ -337,7 +351,7 @@ export function TunnelList({
                         <Icon name="play" size={13} />
                       </button>
                     )}
-                    {canStop && (
+                    {stoppable && (
                       <button
                         className="act act--stop"
                         type="button"
