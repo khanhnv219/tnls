@@ -681,6 +681,14 @@ mod tests {
     use crate::tunnel::{TunnelInput, TunnelMode};
     use std::collections::VecDeque as Queue;
 
+    /// A port that is bindable right now. Fixed ports break on Windows hosts
+    /// where Hyper-V/WinNAT reserve dynamic ranges (`netsh int ipv4 show
+    /// excludedportrange protocol=tcp`), because `start` probes the bind.
+    fn free_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        listener.local_addr().expect("local addr").port()
+    }
+
     fn local_config(id: &str, port: u16) -> TunnelConfig {
         let mut cfg = TunnelInput {
             name: format!("t-{id}"),
@@ -808,7 +816,7 @@ mod tests {
     #[test]
     fn start_promotes_to_running_and_stop_reaps() {
         let mut m = manager();
-        m.upsert_config(local_config("a", 54391));
+        m.upsert_config(local_config("a", free_port()));
         let st = m.start("a").unwrap();
         assert_eq!(st.state, TunnelState::Starting);
         assert!(st.pid.is_some());
@@ -863,7 +871,7 @@ mod tests {
         m.spawner.live_polls = 0;
         m.spawner.code = 255;
         m.spawner.stderr = vec!["ssh: connect to host x port 22: Connection timed out".into()];
-        m.upsert_config(local_config("flaky", 54392));
+        m.upsert_config(local_config("flaky", free_port()));
         let err = m.start("flaky").unwrap_err();
         assert!(err.to_string().contains("cannot reach"));
 
@@ -889,7 +897,7 @@ mod tests {
         m.spawner.live_polls = 0;
         m.spawner.code = 255;
         m.spawner.stderr = vec!["Connection timed out".into()];
-        m.upsert_config(local_config("down", 54393));
+        m.upsert_config(local_config("down", free_port()));
         // start() itself consumes the first attempt (1 initial spawn).
         m.start("down").unwrap_err();
         for _ in 0..10 {
@@ -907,9 +915,10 @@ mod tests {
         let mut m = manager();
         m.spawner.live_polls = 0;
         m.spawner.code = 255;
+        let port = free_port();
         m.spawner.stderr =
-            vec!["channel_setup_fwd_listener_tcpip: cannot listen to port: 54394".into()];
-        m.upsert_config(local_config("conflict", 54394));
+            vec![format!("channel_setup_fwd_listener_tcpip: cannot listen to port: {port}")];
+        m.upsert_config(local_config("conflict", port));
         let err = m.start("conflict").unwrap_err();
         assert!(matches!(err, TunnelError::PortInUse(_)));
         m.poll(Instant::now());
@@ -926,7 +935,7 @@ mod tests {
         m.spawner.live_polls = 0;
         m.spawner.code = 255;
         m.spawner.stderr = vec!["Connection timed out".into()];
-        m.upsert_config(local_config("s", 54395));
+        m.upsert_config(local_config("s", free_port()));
         // start() consumes attempt 1 (restart_count=1, retry due immediately).
         m.start("s").unwrap_err();
         assert_eq!(m.status("s").unwrap().restart_count, 1);
@@ -951,7 +960,7 @@ mod tests {
             "debug1: Connecting to x".into(),
             "debug1: Connected.".into(),
         ];
-        m.upsert_config(local_config("loggy", 54396));
+        m.upsert_config(local_config("loggy", free_port()));
         m.start("loggy").unwrap();
         m.poll(Instant::now());
         let logs = m.logs("loggy", 10).unwrap();
@@ -967,7 +976,7 @@ mod tests {
     #[test]
     fn remove_config_stops_running_tunnel() {
         let mut m = manager();
-        m.upsert_config(local_config("tmp", 54397));
+        m.upsert_config(local_config("tmp", free_port()));
         m.start("tmp").unwrap();
         m.remove_config("tmp").unwrap();
         assert!(matches!(
@@ -980,7 +989,7 @@ mod tests {
     #[test]
     fn restart_restarts_cleanly() {
         let mut m = manager();
-        m.upsert_config(local_config("r", 54398));
+        m.upsert_config(local_config("r", free_port()));
         m.start("r").unwrap();
         m.poll(Instant::now());
         let first_pid = m.status("r").unwrap().pid;
@@ -994,7 +1003,7 @@ mod tests {
     #[test]
     fn unhealthy_promote_goes_degraded() {
         let mut m = manager_with_health(vec![false]);
-        m.upsert_config(local_config("deg", 54401));
+        m.upsert_config(local_config("deg", free_port()));
         m.start("deg").unwrap();
         m.poll(Instant::now());
         assert_eq!(m.status("deg").unwrap().state, TunnelState::Degraded);
@@ -1007,7 +1016,7 @@ mod tests {
     #[test]
     fn degraded_recovers_to_running() {
         let mut m = manager_with_health(vec![false, true]);
-        m.upsert_config(local_config("rec", 54402));
+        m.upsert_config(local_config("rec", free_port()));
         m.start("rec").unwrap();
         m.poll(Instant::now());
         assert_eq!(m.status("rec").unwrap().state, TunnelState::Degraded);
@@ -1018,7 +1027,7 @@ mod tests {
     #[test]
     fn running_degrades_when_dial_fails() {
         let mut m = manager_with_health(vec![true, false]);
-        m.upsert_config(local_config("wd", 54403));
+        m.upsert_config(local_config("wd", free_port()));
         m.start("wd").unwrap();
         m.poll(Instant::now());
         assert_eq!(m.status("wd").unwrap().state, TunnelState::Running);
@@ -1041,7 +1050,7 @@ mod tests {
         m.set_startup_grace(Duration::ZERO);
         m.set_health_checker(Box::new(Counting { calls: 0 }));
         m.set_health_interval(Duration::from_secs(3600));
-        m.upsert_config(local_config("th", 54404));
+        m.upsert_config(local_config("th", free_port()));
         m.start("th").unwrap();
         m.poll(Instant::now());
         m.poll(Instant::now());
