@@ -27,8 +27,58 @@ export async function deleteTunnel(id: string): Promise<void> {
   return invoke("delete_tunnel", { id });
 }
 
+/** Who holds a local endpoint (`tnls_core::ports::ConflictOwner`). */
+export type ConflictOwner =
+  | { kind: "tunnel"; id: string; name: string; tags: string[]; pid: number | null }
+  | { kind: "process"; pid: number | null; process: string | null };
+
+export interface PortConflict {
+  bind: string;
+  port: number;
+  owner: ConflictOwner;
+}
+
+/** A start refused because the local port is taken. `String(e)` is the message. */
+export class PortConflictError extends Error {
+  constructor(
+    message: string,
+    readonly conflict: PortConflict,
+  ) {
+    super(message);
+    this.name = "PortConflictError";
+  }
+  toString(): string {
+    return this.message;
+  }
+}
+
+/**
+ * Start-type commands reject with `{ kind: "portConflict" | "other", message }`.
+ * Turn that into a PortConflictError or the plain message string other
+ * callers already expect.
+ */
+async function startCall(cmd: string, args: Record<string, unknown>): Promise<TunnelStatus> {
+  try {
+    return await invoke<TunnelStatus>(cmd, args);
+  } catch (e) {
+    if (e && typeof e === "object" && "kind" in e && "message" in e) {
+      const err = e as { kind: string; message: string; conflict?: PortConflict };
+      if (err.kind === "portConflict" && err.conflict) {
+        throw new PortConflictError(err.message, err.conflict);
+      }
+      throw err.message;
+    }
+    throw e;
+  }
+}
+
 export async function startTunnel(id: string): Promise<TunnelStatus> {
-  return invoke("start_tunnel", { id });
+  return startCall("start_tunnel", { id });
+}
+
+/** Conflict dialog: stop the tunnel holding the port, then start `id`. */
+export async function takeOverPort(holderId: string, id: string): Promise<TunnelStatus> {
+  return startCall("take_over_port", { holderId, id });
 }
 
 export async function stopTunnel(id: string): Promise<TunnelStatus> {
@@ -36,7 +86,7 @@ export async function stopTunnel(id: string): Promise<TunnelStatus> {
 }
 
 export async function restartTunnel(id: string): Promise<TunnelStatus> {
-  return invoke("restart_tunnel", { id });
+  return startCall("restart_tunnel", { id });
 }
 
 export async function getTunnelLogs(

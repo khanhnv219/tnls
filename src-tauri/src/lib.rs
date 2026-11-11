@@ -34,6 +34,7 @@ pub fn run() {
             commands::start_tunnel,
             commands::stop_tunnel,
             commands::restart_tunnel,
+            commands::take_over_port,
             commands::get_tunnel_logs,
             commands::preview_ssh_command,
             commands::hide_to_tray,

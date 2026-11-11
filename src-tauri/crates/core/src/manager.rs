@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::health::{self, HEALTH_TIMEOUT};
 use crate::logs::{LogLevel, LogLine};
+use crate::ports::{ConflictOwner, OsPortProbe, PortConflict, PortProbe};
 use crate::ssh::{self, SshChild, STARTUP_GRACE_MS};
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelState, TunnelStatus};
 
@@ -212,6 +213,7 @@ impl Runtime {
 pub struct TunnelManager<S: Spawner = SshSpawner> {
     spawner: S,
     checker: Box<dyn HealthChecker>,
+    ports: Box<dyn PortProbe>,
     configs: HashMap<String, TunnelConfig>,
     runtimes: HashMap<String, Runtime>,
     events: VecDeque<ManagerEvent>,
@@ -230,6 +232,7 @@ impl<S: Spawner> TunnelManager<S> {
         Self {
             spawner,
             checker: Box::new(TcpHealthChecker),
+            ports: Box::new(OsPortProbe),
             configs: HashMap::new(),
             runtimes: HashMap::new(),
             events: VecDeque::new(),
@@ -416,6 +419,116 @@ impl<S: Spawner> TunnelManager<S> {
         }
     }
 
+    /// Refuse to start `id` when its local endpoint is taken: first by another
+    /// managed tunnel that currently has an ssh process (same port, binds
+    /// overlap), then by anything else on the OS. A conflict is a config
+    /// error: never retried.
+    pub fn check_conflict(&mut self, id: &str) -> Result<(), TunnelError> {
+        let config = self
+            .configs
+            .get(id)
+            .ok_or_else(|| TunnelError::NotFound(id.to_owned()))?;
+        if !listens_locally(config) {
+            return Ok(());
+        }
+        let (bind, port) = (config.bind_address.clone(), config.local_port);
+        if crate::ports::socket_addr(&bind, port).is_none() {
+            return Err(TunnelError::InvalidBindAddress);
+        }
+        let managed = self.configs.values().find(|other| {
+            other.id != id
+                && listens_locally(other)
+                && other.local_port == port
+                && crate::ports::binds_overlap(&other.bind_address, &bind)
+                && self
+                    .runtimes
+                    .get(&other.id)
+                    .is_some_and(|rt| rt.child.is_some())
+        });
+        let owner = if let Some(other) = managed {
+            Some(ConflictOwner::Tunnel {
+                id: other.id.clone(),
+                name: other.name.clone(),
+                tags: other.tags.clone(),
+                pid: self.runtimes.get(&other.id).and_then(|rt| rt.status.pid),
+            })
+        } else if self.ports.is_bindable(&bind, port) {
+            None
+        } else {
+            Some(self.identify_owner(port))
+        };
+        match owner {
+            None => Ok(()),
+            Some(owner) => Err(TunnelError::PortConflict(Box::new(PortConflict {
+                bind,
+                port,
+                owner,
+            }))),
+        }
+    }
+
+    /// Name whoever listens on `port`: a managed tunnel when the OS reports
+    /// one of our ssh pids, otherwise the OS process (or unknown).
+    fn identify_owner(&mut self, port: u16) -> ConflictOwner {
+        let listener = self.ports.find_listener(port);
+        let pid = listener.as_ref().and_then(|l| l.pid);
+        if let Some(pid) = pid {
+            if let Some((id, _)) = self
+                .runtimes
+                .iter()
+                .find(|(_, rt)| rt.status.pid == Some(pid) && rt.child.is_some())
+            {
+                if let Some(cfg) = self.configs.get(id) {
+                    return ConflictOwner::Tunnel {
+                        id: cfg.id.clone(),
+                        name: cfg.name.clone(),
+                        tags: cfg.tags.clone(),
+                        pid: Some(pid),
+                    };
+                }
+            }
+        }
+        ConflictOwner::Process {
+            pid,
+            process: listener.and_then(|l| l.process),
+        }
+    }
+
+    /// Turn ssh's own "address already in use" (a race the pre-check missed)
+    /// into the same structured conflict the pre-check reports.
+    fn explain_port_error(&mut self, id: &str, err: TunnelError) -> TunnelError {
+        if !matches!(err, TunnelError::PortInUse(_)) {
+            return err;
+        }
+        let Some((bind, port)) = self
+            .configs
+            .get(id)
+            .map(|c| (c.bind_address.clone(), c.local_port))
+        else {
+            return err;
+        };
+        let owner = self.identify_owner(port);
+        TunnelError::PortConflict(Box::new(PortConflict { bind, port, owner }))
+    }
+
+    /// Note a refused start in the tunnel's log (no state change, no event).
+    fn log_blocked_start(&mut self, id: &str, err: &TunnelError) {
+        let rt = self
+            .runtimes
+            .entry(id.to_owned())
+            .or_insert_with(|| Runtime::fresh(id));
+        rt.push_line(LogLine::tnls(
+            Utc::now(),
+            LogLevel::Error,
+            &format!("start blocked: {err}"),
+        ));
+    }
+
+    /// Override the OS port probe (tests inject scripted answers).
+    pub fn set_port_probe(&mut self, probe: Box<dyn PortProbe>) {
+        self.ports = probe;
+    }
+
     pub fn upsert_config(&mut self, config: TunnelConfig) -> bool {
         config
             .validate()
@@ -456,7 +569,12 @@ impl<S: Spawner> TunnelManager<S> {
         if already {
             return Err(TunnelError::AlreadyRunning(id.to_owned()));
         }
-        check_port_free(&config)?;
+        // A taken port is a config error: refuse without touching the
+        // tunnel's state and without scheduling a retry.
+        if let Err(err) = self.check_conflict(id) {
+            self.log_blocked_start(id, &err);
+            return Err(err);
+        }
         let mut child = self.spawner.spawn(&config)?;
         // Reap instant-exit failures (bad config surfaces fast thanks to
         // ExitOnForwardFailure) instead of reporting a phantom Running.
@@ -465,6 +583,7 @@ impl<S: Spawner> TunnelManager<S> {
         if !child.is_alive()? {
             let (code, tail) = child.reap(FAILURE_TAIL);
             let err = ssh::classify_exit(code, &tail);
+            let err = self.explain_port_error(id, err);
             let rt = self
                 .runtimes
                 .entry(id.to_owned())
@@ -569,7 +688,7 @@ impl<S: Spawner> TunnelManager<S> {
                 Some(c) => c,
                 None => continue,
             };
-            if let Err(err) = check_port_free(&config) {
+            if let Err(err) = self.check_conflict(&id) {
                 self.fail_now(&id, err);
                 continue;
             }
@@ -667,6 +786,7 @@ impl<S: Spawner> TunnelManager<S> {
                         let rt = &self.runtimes[&id];
                         ssh::classify_exit(code, &rt.incarnation_lines)
                     };
+                    let err = self.explain_port_error(&id, err);
                     self.handle_failure(&id, now, err);
                 }
             }
@@ -776,17 +896,10 @@ fn is_transient(err: &TunnelError) -> bool {
     }
 }
 
-/// Bind-then-drop probe: fail fast when the local endpoint is taken or
-/// unparseable, before spawning ssh.
-fn check_port_free(config: &TunnelConfig) -> Result<(), TunnelError> {
-    let endpoint = config.local_endpoint();
-    let addr: std::net::SocketAddr = endpoint
-        .parse()
-        .map_err(|_| TunnelError::InvalidBindAddress)?;
-    match std::net::TcpListener::bind(addr) {
-        Ok(_) => Ok(()),
-        Err(_) => Err(TunnelError::PortInUse(endpoint)),
-    }
+/// Whether a tunnel opens a listener on this machine. `-R` listens on the
+/// SSH server, so its bind/local port are never probed locally.
+fn listens_locally(config: &TunnelConfig) -> bool {
+    config.mode != crate::tunnel::TunnelMode::Remote
 }
 
 #[cfg(test)]
@@ -919,14 +1032,157 @@ mod tests {
         manager_with_health(vec![true])
     }
 
+    /// Scripted OS: ports in `busy` cannot be bound and report `owner`.
+    #[derive(Default)]
+    struct FakePorts {
+        busy: Vec<(u16, Option<crate::ports::Listener>)>,
+    }
+
+    impl PortProbe for FakePorts {
+        fn is_bindable(&mut self, _bind: &str, port: u16) -> bool {
+            !self.busy.iter().any(|(p, _)| *p == port)
+        }
+        fn find_listener(&mut self, port: u16) -> Option<crate::ports::Listener> {
+            self.busy
+                .iter()
+                .find(|(p, _)| *p == port)
+                .and_then(|(_, l)| l.clone())
+        }
+    }
+
     fn manager_with_health(answers: Vec<bool>) -> TunnelManager<FakeSpawner> {
         let mut m = TunnelManager::new(FakeSpawner::ok());
+        m.set_port_probe(Box::new(FakePorts::default()));
         m.set_startup_grace(Duration::ZERO);
         m.set_startup_timeout(Duration::ZERO, Duration::ZERO);
         m.set_retry_delays(vec![Duration::ZERO]);
         m.set_health_checker(Box::new(ScriptedHealth { answers }));
         m.set_health_interval(Duration::ZERO);
         m
+    }
+
+    fn config_at(id: &str, bind: &str, port: u16) -> TunnelConfig {
+        let mut cfg = local_config(id, port);
+        cfg.bind_address = bind.to_owned();
+        cfg.name = format!("tunnel {id}");
+        cfg
+    }
+
+    #[test]
+    fn managed_tunnel_on_same_bind_and_port_blocks_start() {
+        let mut m = manager();
+        let port = free_port();
+        let mut a = config_at("a", "127.0.0.1", port);
+        a.tags = vec!["homelab".into()];
+        m.upsert_config(a);
+        m.upsert_config(config_at("b", "127.0.0.1", port));
+        m.start("a").unwrap();
+        m.poll(Instant::now());
+        let spawns = m.spawner.spawns;
+
+        let err = m.start("b").unwrap_err();
+        let TunnelError::PortConflict(conflict) = err else {
+            panic!("expected PortConflict, got {err:?}");
+        };
+        assert_eq!((conflict.bind.as_str(), conflict.port), ("127.0.0.1", port));
+        match &conflict.owner {
+            ConflictOwner::Tunnel {
+                id,
+                name,
+                tags,
+                pid,
+            } => {
+                assert_eq!((id.as_str(), name.as_str()), ("a", "tunnel a"));
+                assert_eq!(tags, &["homelab"]);
+                assert!(pid.is_some());
+            }
+            other => panic!("expected managed owner, got {other:?}"),
+        }
+        // Blocked means blocked: no spawn, no retry, A untouched, B unchanged.
+        assert_eq!(m.spawner.spawns, spawns);
+        assert_eq!(m.status("a").unwrap().state, TunnelState::Running);
+        assert!(m
+            .status("b")
+            .map_or(true, |s| s.state == TunnelState::Stopped));
+        m.poll(Instant::now());
+        assert_eq!(m.spawner.spawns, spawns);
+        assert!(m
+            .logs("b", 10)
+            .unwrap()
+            .iter()
+            .any(|l| l.text.starts_with("tnls: start blocked:") && l.level == LogLevel::Error));
+    }
+
+    #[test]
+    fn wildcard_bind_conflicts_with_loopback_on_same_port() {
+        let mut m = manager();
+        let port = free_port();
+        m.upsert_config(config_at("a", "0.0.0.0", port));
+        m.upsert_config(config_at("b", "127.0.0.1", port));
+        m.start("a").unwrap();
+        assert!(matches!(m.start("b"), Err(TunnelError::PortConflict(_))));
+    }
+
+    #[test]
+    fn same_port_on_a_different_bind_is_not_a_conflict() {
+        let mut m = manager();
+        let port = free_port();
+        m.upsert_config(config_at("a", "127.0.0.1", port));
+        m.upsert_config(config_at("b", "127.0.0.2", port));
+        m.start("a").unwrap();
+        m.start("b").unwrap();
+    }
+
+    #[test]
+    fn different_port_on_the_same_bind_is_not_a_conflict() {
+        let mut m = manager();
+        m.upsert_config(config_at("a", "127.0.0.1", free_port()));
+        m.upsert_config(config_at("b", "127.0.0.1", free_port()));
+        m.start("a").unwrap();
+        m.start("b").unwrap();
+    }
+
+    #[test]
+    fn stopped_managed_tunnel_on_same_port_does_not_block() {
+        let mut m = manager();
+        let port = free_port();
+        m.upsert_config(config_at("a", "127.0.0.1", port));
+        m.upsert_config(config_at("b", "127.0.0.1", port));
+        m.start("b").unwrap();
+    }
+
+    #[test]
+    fn unmanaged_listener_is_reported_with_its_process() {
+        let mut m = manager();
+        let port = free_port();
+        m.set_port_probe(Box::new(FakePorts {
+            busy: vec![(
+                port,
+                Some(crate::ports::Listener {
+                    pid: Some(4321),
+                    process: Some("node.exe".into()),
+                }),
+            )],
+        }));
+        m.upsert_config(config_at("b", "127.0.0.1", port));
+        let err = m.start("b").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("127.0.0.1:{port} is already in use by node.exe (pid 4321)")
+        );
+        assert_eq!(m.spawner.spawns, 0);
+    }
+
+    #[test]
+    fn unidentified_listener_is_an_unknown_process() {
+        let mut m = manager();
+        let port = free_port();
+        m.set_port_probe(Box::new(FakePorts {
+            busy: vec![(port, None)],
+        }));
+        m.upsert_config(config_at("b", "127.0.0.1", port));
+        let err = m.start("b").unwrap_err();
+        assert!(err.to_string().ends_with("an unknown process"), "{err}");
     }
 
     #[test]
@@ -1006,12 +1262,14 @@ mod tests {
 
     #[test]
     fn occupied_port_fails_before_spawn() {
+        // Real OS probe: a port held by this test process.
         let mut m = manager();
+        m.set_port_probe(Box::new(OsPortProbe));
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         m.upsert_config(local_config("busy", port));
         let err = m.start("busy").unwrap_err();
-        assert!(matches!(err, TunnelError::PortInUse(_)));
+        assert!(matches!(err, TunnelError::PortConflict(_)), "{err:?}");
         assert_eq!(m.spawner.spawns, 0);
     }
 
@@ -1073,7 +1331,12 @@ mod tests {
         )];
         m.upsert_config(local_config("conflict", port));
         let err = m.start("conflict").unwrap_err();
-        assert!(matches!(err, TunnelError::PortInUse(_)));
+        // ssh's own "cannot listen" (a race the pre-check missed) becomes the
+        // same structured conflict, and leaves the tunnel Failed with it.
+        assert!(matches!(err, TunnelError::PortConflict(_)), "{err:?}");
+        let status = m.status("conflict").unwrap();
+        assert_eq!(status.state, TunnelState::Failed);
+        assert!(status.last_error.unwrap().contains("already in use by"));
         m.poll(Instant::now());
         m.poll(Instant::now());
         let st = m.status("conflict").unwrap();

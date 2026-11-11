@@ -351,6 +351,9 @@ pub enum TunnelError {
     InvalidTag(String),
     #[error("local endpoint {0} is already in use")]
     PortInUse(String),
+    /// Start refused: the local endpoint is taken; says by whom.
+    #[error("{0}")]
+    PortConflict(Box<crate::ports::PortConflict>),
     #[error("failed to spawn ssh: {0}")]
     SpawnFailed(String),
     #[error("ssh exited with code {0}: {1}")]

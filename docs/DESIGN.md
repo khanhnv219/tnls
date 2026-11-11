@@ -48,6 +48,12 @@ verification, agent, key parsing, jump host, reconnect — scope lớn, rủi ro
    (timeout, reset, server tạm unavailable). Không retry lỗi cấu hình
    (port conflict, bad key, host-key mismatch, permission denied).
 10. Không lưu password plaintext, private key, passphrase. Không bypass `known_hosts`.
+10b. Trước mỗi lần start (kể cả retry), kiểm tra `bind:local_port`: trước tiên với các
+    tunnel tnls đang có ssh process (cùng port, bind trùng hoặc một bên là 0.0.0.0), sau đó
+    với OS (try-bind; Windows dùng `netstat -ano` + `tasklist`, macOS/Linux dùng `lsof`/`ss`
+    nếu có sẵn). Conflict thì không start, không retry, không đổi state; UI nêu tên tunnel
+    hoặc process đang giữ port. Conflict lọt qua tới ssh (race) vẫn thành Failed với cùng
+    thông báo. `-R` không mở listener local nên không bị kiểm tra.
 11. Nút đóng window không tự thoát: app hỏi "Minimize to tray" hay "Quit" (có thể nhớ lựa chọn,
     đổi lại trong menu ⋯ → Close button). Tray icon mở lại window. Quit (từ dialog, tray hay
     lúc OS tắt app) luôn stop toàn bộ tunnel, không để process mồ côi.

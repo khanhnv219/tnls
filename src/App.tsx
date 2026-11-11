@@ -5,6 +5,7 @@ import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { Drawer } from "./components/Drawer";
 import { Icon } from "./components/Icon";
 import { ImportJsonModal } from "./components/ImportJsonModal";
+import { PortConflictModal, type ConflictView } from "./components/PortConflictModal";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
 import { Toasts, useToasts } from "./components/Toasts";
@@ -20,7 +21,9 @@ import {
   importTunnelsJson,
   listTunnels,
   onTunnelEvent,
+  PortConflictError,
   restartTunnel,
+  takeOverPort,
   setPassphrase,
   startTunnel,
   stopTunnel,
@@ -107,6 +110,8 @@ export default function App() {
     () => (document.documentElement.dataset.theme as Theme) ?? "dark",
   );
   const [deleteTargets, setDeleteTargets] = useState<TunnelRow[] | null>(null);
+  const [conflict, setConflict] = useState<(ConflictView & { tunnelId: string }) | null>(null);
+  const [formFocus, setFormFocus] = useState<"name" | "localPort">("name");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
   const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
@@ -321,6 +326,60 @@ export default function App() {
     },
     [reload, toast],
   );
+
+  /** Start or restart one tunnel; a port conflict opens its dialog. */
+  const startOne = useCallback(
+    async (id: string, action: (id: string) => Promise<unknown>) => {
+      setPending((p) => ({ ...p, [id]: true }));
+      try {
+        await action(id);
+      } catch (e) {
+        if (e instanceof PortConflictError) {
+          const name = rows.find((r) => r.id === id)?.name ?? id;
+          setConflict({ conflict: e.conflict, tunnelName: name, tunnelId: id });
+        } else {
+          toast(String(e), "error");
+        }
+      } finally {
+        setPending((p) => ({ ...p, [id]: false }));
+        reload();
+      }
+    },
+    [rows, reload, toast],
+  );
+
+  const takeOver = useCallback(
+    async (holderId: string) => {
+      if (!conflict) return;
+      const { tunnelId, tunnelName } = conflict;
+      try {
+        await takeOverPort(holderId, tunnelId);
+        setConflict(null);
+        toast(`Started "${tunnelName}" on ${conflict.conflict.bind}:${conflict.conflict.port}`, "success");
+      } catch (e) {
+        if (e instanceof PortConflictError) {
+          // The other tunnel stopped, but something else still holds the port.
+          setConflict({ conflict: e.conflict, tunnelName, tunnelId });
+        } else {
+          setConflict(null);
+          toast(String(e), "error");
+        }
+      } finally {
+        reload();
+      }
+    },
+    [conflict, reload, toast],
+  );
+
+  const changePortFor = useCallback(() => {
+    const row = conflict ? rows.find((r) => r.id === conflict.tunnelId) : undefined;
+    setConflict(null);
+    if (!row) return;
+    setDraft(null);
+    setSaveError(null);
+    setFormFocus("localPort");
+    setFormTarget(row);
+  }, [conflict, rows]);
 
   const stats = useMemo(
     () => ({
@@ -775,13 +834,14 @@ export default function App() {
               leaving={leaving}
               selection={selection}
               onSelect={selectRows}
-              onStart={(id) => runAction(id, startTunnel)}
+              onStart={(id) => startOne(id, startTunnel)}
               onStop={(id) => runAction(id, stopTunnel)}
-              onRestart={(id) => runAction(id, restartTunnel)}
+              onRestart={(id) => startOne(id, restartTunnel)}
               onRequestDelete={(row) => setDeleteTargets([row])}
               onEdit={(row) => {
                 setDraft(null);
                 setSaveError(null);
+                setFormFocus("name");
                 setFormTarget(row);
               }}
               onDuplicate={handleDuplicate}
@@ -806,6 +866,13 @@ export default function App() {
           />
         </main>
       </div>
+
+      <PortConflictModal
+        view={conflict}
+        onCancel={() => setConflict(null)}
+        onTakeOver={takeOver}
+        onChangePort={changePortFor}
+      />
 
       <CloseAppModal
         open={closeOpen}
@@ -850,6 +917,7 @@ export default function App() {
             onClose={closeForm}
             notify={toast}
             tagSuggestions={tagSuggestions}
+            focusField={formFocus}
           />
         )}
       </Drawer>

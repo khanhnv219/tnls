@@ -10,5 +10,6 @@ pub mod keychain;
 pub mod logs;
 pub mod manager;
 pub mod persistence;
+pub mod ports;
 pub mod ssh;
 pub mod tunnel;

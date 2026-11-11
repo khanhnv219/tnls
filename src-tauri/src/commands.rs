@@ -1,7 +1,7 @@
 use tauri::State;
 use tnls_core::logs::LogLine;
 use tnls_core::persistence;
-use tnls_core::tunnel::{TunnelConfig, TunnelInput, TunnelStatus};
+use tnls_core::tunnel::{TunnelConfig, TunnelError, TunnelInput, TunnelStatus};
 
 use crate::state::{err_text, AppState};
 
@@ -45,19 +45,55 @@ pub fn delete_tunnel(state: State<'_, AppState>, id: String) -> Result<(), Strin
     Ok(())
 }
 
+/// Error shape for commands that start a tunnel: a port conflict carries
+/// who holds the port so the UI can offer the right fix; everything else is
+/// a message.
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StartError {
+    #[serde(rename_all = "camelCase")]
+    PortConflict {
+        message: String,
+        conflict: Box<tnls_core::ports::PortConflict>,
+    },
+    Other {
+        message: String,
+    },
+}
+
+impl From<String> for StartError {
+    fn from(message: String) -> Self {
+        Self::Other { message }
+    }
+}
+
+impl From<TunnelError> for StartError {
+    fn from(err: TunnelError) -> Self {
+        let message = err.to_string();
+        match err {
+            TunnelError::PortConflict(conflict) => Self::PortConflict { message, conflict },
+            _ => Self::Other { message },
+        }
+    }
+}
+
 #[tauri::command]
-pub fn start_tunnel(state: State<'_, AppState>, id: String) -> Result<TunnelStatus, String> {
+pub fn start_tunnel(state: State<'_, AppState>, id: String) -> Result<TunnelStatus, StartError> {
+    start_inner(&state, &id)
+}
+
+fn start_inner(state: &AppState, id: &str) -> Result<TunnelStatus, StartError> {
     // Scope each lock separately: never hold the manager guard while
     // acquiring the db guard (Tauri runs commands concurrently).
-    let managed = state.manager()?.config(&id).is_some();
+    let managed = state.manager()?.config(id).is_some();
     if !managed {
         let config = {
             let db = state.db()?;
-            persistence::get(&db, &id).map_err(err_text)?
+            persistence::get(&db, id)?
         };
         state.manager()?.upsert_config(config);
     }
-    state.manager()?.start(&id).map_err(err_text)
+    Ok(state.manager()?.start(id)?)
 }
 
 #[tauri::command]
@@ -66,8 +102,19 @@ pub fn stop_tunnel(state: State<'_, AppState>, id: String) -> Result<TunnelStatu
 }
 
 #[tauri::command]
-pub fn restart_tunnel(state: State<'_, AppState>, id: String) -> Result<TunnelStatus, String> {
-    state.manager()?.restart(&id).map_err(err_text)
+pub fn restart_tunnel(state: State<'_, AppState>, id: String) -> Result<TunnelStatus, StartError> {
+    Ok(state.manager()?.restart(&id)?)
+}
+
+/// Conflict dialog: stop the tunnel holding the port, then start this one.
+#[tauri::command]
+pub fn take_over_port(
+    state: State<'_, AppState>,
+    holder_id: String,
+    id: String,
+) -> Result<TunnelStatus, StartError> {
+    state.manager()?.stop(&holder_id)?;
+    start_inner(&state, &id)
 }
 
 #[tauri::command]

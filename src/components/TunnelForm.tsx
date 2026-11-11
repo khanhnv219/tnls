@@ -125,6 +125,7 @@ export function TunnelForm({
   onClose,
   notify,
   tagSuggestions,
+  focusField,
 }: {
   initial: TunnelConfig | null;
   draft?: TunnelInput | null;
@@ -135,6 +136,8 @@ export function TunnelForm({
   notify: PushToast;
   /** Tags already used by other tunnels. */
   tagSuggestions: string[];
+  /** Field to focus on open; "localPort" when sent here by a port conflict. */
+  focusField?: "name" | "localPort";
 }) {
   const seed: Partial<TunnelInput> | null = draft ?? initial;
   const [values, setValues] = useState<Values>(() => ({
@@ -183,8 +186,17 @@ export function TunnelForm({
 
   useEffect(() => {
     // Wait for the drawer to slide in before moving focus into it.
-    const t = setTimeout(() => nameRef.current?.focus(), 180);
+    const t = setTimeout(() => {
+      if (focusField === "localPort") {
+        const el = document.getElementById(FIELD_ID.localPort) as HTMLInputElement | null;
+        el?.focus();
+        el?.select();
+      } else {
+        nameRef.current?.focus();
+      }
+    }, 180);
     return () => clearTimeout(t);
+    // Runs once on open; focusField is fixed for the lifetime of the form.
   }, []);
 
   useEffect(() => {
