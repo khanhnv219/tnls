@@ -1,6 +1,33 @@
 import { useEffect, useState } from "react";
-import type { TunnelRow } from "../lib/types";
+import type { TunnelMode, TunnelRow } from "../lib/types";
+import { Icon } from "./Icon";
+import { Menu, type MenuEntry } from "./Menu";
 import { StatusBadge } from "./StatusBadge";
+
+const MODE_LABEL: Record<TunnelMode, string> = {
+  local: "Local",
+  remote: "Remote",
+  dynamic: "Dynamic",
+};
+
+const MODE_FLAG: Record<TunnelMode, string> = {
+  local: "-L",
+  remote: "-R",
+  dynamic: "-D",
+};
+
+const STARTABLE: Record<string, true> = {
+  stopped: true,
+  failed: true,
+  unknown: true,
+};
+
+const STOPPABLE: Record<string, true> = {
+  starting: true,
+  running: true,
+  degraded: true,
+  unknown: true,
+};
 
 function formatUptime(startedAt: string | null | undefined, now: number): string | null {
   if (!startedAt) return null;
@@ -17,215 +44,345 @@ function formatUptime(startedAt: string | null | undefined, now: number): string
 }
 
 function remoteLabel(row: TunnelRow): string {
-  if (row.mode === "dynamic") return `SOCKS via ${row.sshTarget}`;
+  if (row.mode === "dynamic") return `SOCKS ${row.bindAddress}:${row.localPort}`;
   return `${row.remoteHost ?? "?"}:${row.remotePort ?? "?"}`;
 }
 
-const STARTABLE: Record<string, true> = {
-  stopped: true,
-  failed: true,
-  unknown: true,
-};
-
-const STOPPABLE: Record<string, true> = {
-  starting: true,
-  running: true,
-  degraded: true,
-  unknown: true,
-};
-
-function canStart(row: TunnelRow): boolean {
-  return STARTABLE[row.status.state] === true;
+/**
+ * The detail column says what is happening right now. A failed or degraded
+ * row shows its error, never an uptime: uptime on a dead row misleads.
+ */
+function detailText(row: TunnelRow, now: number): { text: string; error: boolean } {
+  const { state, lastError, pid, startedAt } = row.status;
+  if (lastError && (state === "failed" || state === "degraded" || state === "unknown")) {
+    return { text: lastError, error: true };
+  }
+  if (state === "starting") return { text: "establishing channel…", error: false };
+  if (state === "stopping") return { text: "closing channels…", error: false };
+  if (pid != null) {
+    const up = formatUptime(startedAt, now);
+    return { text: `pid ${pid}${up ? ` · up ${up}` : ""}`, error: false };
+  }
+  return { text: "—", error: false };
 }
 
-function canStop(row: TunnelRow): boolean {
-  return STOPPABLE[row.status.state] === true;
+function AddressCell({
+  value,
+  label,
+  muted,
+}: {
+  value: string;
+  label: string;
+  muted?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  return (
+    <div className={`addr${muted ? " addr--muted" : ""}`}>
+      <span className="addr__value" title={value}>
+        {value}
+      </span>
+      <button
+        className={`addr__copy${copied ? " is-copied" : ""}`}
+        type="button"
+        aria-label={copied ? `Copied ${value}` : `Copy ${label} ${value}`}
+        onClick={() => {
+          navigator.clipboard.writeText(value).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
+        }}
+      >
+        <Icon name={copied ? "check" : "copy"} size={12} />
+      </button>
+    </div>
+  );
 }
 
 export function TunnelList({
   rows,
+  totalCount,
+  query,
   pending,
-  actionError,
+  leaving,
   onStart,
   onStop,
   onRestart,
-  onDelete,
+  onRequestDelete,
   onEdit,
   onDuplicate,
   onShowLogs,
+  onCreate,
+  onImportSsh,
+  onClearQuery,
 }: {
   rows: TunnelRow[];
+  totalCount: number;
+  query: string;
   pending: Record<string, boolean>;
-  actionError: string | null;
+  leaving: ReadonlySet<string>;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
-  onDelete: (id: string) => void;
+  onRequestDelete: (row: TunnelRow) => void;
   onEdit: (row: TunnelRow) => void;
   onDuplicate: (row: TunnelRow) => void;
   onShowLogs: (row: TunnelRow) => void;
+  onCreate: () => void;
+  onImportSsh: () => void;
+  onClearQuery: () => void;
 }) {
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const hasLive = rows.some((r) => r.status.pid != null);
 
   useEffect(() => {
+    if (!hasLive) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (copied === null) return;
-    const t = setTimeout(() => setCopied(null), 1400);
-    return () => clearTimeout(t);
-  }, [copied]);
+  }, [hasLive]);
 
   if (rows.length === 0) {
+    const onboarding = totalCount === 0;
     return (
       <div className="empty" role="status" aria-live="polite">
-        <h3 style={{ margin: "0 0 8px" }}>No tunnels yet</h3>
-        <p style={{ margin: "0 0 14px" }}>
-          Create your first tunnel — it is a typed profile, not a raw shell
-          command. Start with a local forward like
-          {" "}
-          <code>127.0.0.1:5433 → db.internal:5432</code>
-          {" "}
-          via your bastion.
-        </p>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Tip: use an <code>~/.ssh/config</code> alias as SSH target, press
-          {" "}
-          <kbd>/</kbd>
-          {" "}
-          to search, <kbd>Ctrl+N</kbd> for a new tunnel.
-        </p>
+        <svg className="empty__art" viewBox="0 0 132 104" fill="none" aria-hidden="true">
+          <rect x="14" y="18" width="104" height="68" rx="8" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M14 34h104" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="25" cy="26" r="2.6" fill="currentColor" opacity="0.6" />
+          <circle cx="34" cy="26" r="2.6" fill="currentColor" opacity="0.35" />
+          <path d="M30 46h26M30 56h44M30 66h34" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.85" />
+          <circle cx="96" cy="26" r="3" fill="var(--accent)" opacity="0.9" />
+          <path d="M86 50h22M86 60h16M86 70h22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.35" />
+          <path d="M60 92v-8" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 3" opacity="0.5" />
+        </svg>
+        {onboarding ? (
+          <>
+            <h2 className="empty__title">No tunnels yet</h2>
+            <p className="empty__desc">
+              A tunnel is a saved, typed profile — not a shell one-liner you
+              retype every morning. Start with a local forward like{" "}
+              <span className="empty__cmd">127.0.0.1:5433 → db.internal:5432</span>{" "}
+              through your bastion.
+            </p>
+            <div className="empty__actions">
+              <button className="btn btn--primary" type="button" onClick={onCreate}>
+                <Icon name="plus" size={15} />
+                Create your first tunnel
+              </button>
+              <button className="btn btn--ghost" type="button" onClick={onImportSsh}>
+                <Icon name="file-code" size={15} />
+                Import from ~/.ssh/config
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="empty__title">No tunnels match</h2>
+            <p className="empty__desc">
+              Nothing matches <span className="empty__cmd">{query.trim()}</span>.
+              Search checks name, SSH target, remote host, and both ports.
+            </p>
+            <div className="empty__actions">
+              <button className="btn btn--ghost" type="button" onClick={onClearQuery}>
+                <Icon name="x" size={15} />
+                Clear search
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
 
+  const menuRow = menu ? rows.find((r) => r.id === menu.id) : undefined;
+  const menuEntries: MenuEntry[] = menuRow
+    ? [
+        {
+          kind: "item",
+          key: "restart",
+          label: "Restart",
+          icon: "restart",
+          disabled: pending[menuRow.id] ?? false,
+          onSelect: () => onRestart(menuRow.id),
+        },
+        {
+          kind: "item",
+          key: "edit",
+          label: "Edit tunnel",
+          icon: "edit",
+          onSelect: () => onEdit(menuRow),
+        },
+        {
+          kind: "item",
+          key: "duplicate",
+          label: "Duplicate",
+          icon: "copy",
+          onSelect: () => onDuplicate(menuRow),
+        },
+        {
+          kind: "item",
+          key: "logs",
+          label: "View logs",
+          icon: "terminal",
+          shortcut: "L",
+          onSelect: () => onShowLogs(menuRow),
+        },
+        { kind: "sep", key: "sep" },
+        {
+          kind: "item",
+          key: "delete",
+          label: "Delete tunnel",
+          icon: "trash",
+          danger: true,
+          onSelect: () => onRequestDelete(menuRow),
+        },
+      ]
+    : [];
+
   return (
-    <div className="table-wrap">
-      {actionError && (
-        <p className="error" role="alert">
-          {actionError}
-        </p>
-      )}
-      <table className="tunnels">
+    <>
+      <table className="tunnels" aria-label="SSH tunnels">
+        <colgroup>
+          <col className="col-check" />
+          <col className="col-name" />
+          <col className="col-mode" />
+          <col className="col-local" />
+          <col className="col-remote" />
+          <col className="col-status" />
+          <col className="col-detail" />
+          <col className="col-actions" />
+        </colgroup>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Mode</th>
-            <th>Local</th>
-            <th>Remote</th>
-            <th>Status</th>
-            <th>Detail</th>
-            <th>Actions</th>
+            <th scope="col">
+              <span className="visually-hidden">Select</span>
+            </th>
+            <th scope="col">Name</th>
+            <th scope="col">Mode</th>
+            <th scope="col">Local</th>
+            <th scope="col">Remote</th>
+            <th scope="col">Status</th>
+            <th scope="col">Detail</th>
+            <th scope="col">
+              <span className="visually-hidden">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const busy = pending[row.id] ?? false;
+            const state = row.status.state;
+            const canStart = STARTABLE[state] === true && !busy;
+            const canStop = STOPPABLE[state] === true && !busy;
+            const detail = detailText(row, now);
             const local = `${row.bindAddress}:${row.localPort}`;
-            const remote = remoteLabel(row);
-            const uptime = formatUptime(row.status.startedAt, now);
-            const detail = row.status.lastError
-              ? row.status.lastError
-              : row.status.pid != null
-                ? `pid ${row.status.pid}${uptime ? ` · ${uptime}` : ""}`
-                : uptime ?? "—";
             return (
-              <tr key={row.id} className={`row-${row.status.state}`}>
-                <td className="name">{row.name}</td>
-                <td>{row.mode}</td>
+              <tr
+                key={row.id}
+                data-id={row.id}
+                data-state={state}
+                className={leaving.has(row.id) ? "is-leaving" : undefined}
+              >
+                <td />
+                <td className="cell-name">
+                  <div className="name-stack">
+                    <span className="name-stack__title">{row.name}</span>
+                    <span className="name-stack__sub">{row.sshTarget}</span>
+                  </div>
+                </td>
                 <td>
-                  <code
-                    className="copyable"
-                    title={copied === local ? "Copied!" : "Click to copy"}
-                    onClick={() => {
-                      navigator.clipboard.writeText(local).then(
-                        () => setCopied(local),
-                        () => setCopied(null),
-                      );
-                    }}
+                  <span className="mode-chip" title={`${MODE_LABEL[row.mode]} forward`}>
+                    <span className="mode-chip__flag">{MODE_FLAG[row.mode]}</span>
+                    {MODE_LABEL[row.mode]}
+                  </span>
+                </td>
+                <td>
+                  <AddressCell value={local} label="local address" />
+                </td>
+                <td>
+                  <AddressCell
+                    value={remoteLabel(row)}
+                    label="remote address"
+                    muted={row.mode === "dynamic"}
+                  />
+                </td>
+                <td>
+                  <StatusBadge state={state} restartCount={row.status.restartCount} />
+                </td>
+                <td>
+                  <div
+                    className={`detail-cell${detail.error ? " is-error" : ""}${detail.text === "—" ? " is-idle" : ""}`}
+                    title={detail.text}
                   >
-                    {local}
-                  </code>
-                  {copied === local && <span className="copied-hint">copied</span>}
+                    {detail.text}
+                  </div>
                 </td>
                 <td>
-                  <code
-                    className="copyable"
-                    title={copied === remote ? "Copied!" : "Click to copy"}
-                    onClick={() => {
-                      navigator.clipboard.writeText(remote).then(
-                        () => setCopied(remote),
-                        () => setCopied(null),
-                      );
-                    }}
-                  >
-                    {remote}
-                  </code>
-                  {copied === remote && <span className="copied-hint">copied</span>}
-                </td>
-                <td>
-                  <StatusBadge state={row.status.state} />
-                  {row.status.restartCount > 0 && (
-                    <span className="muted" title="Retry attempts">
-                      {" "}
-                      ↻{row.status.restartCount}
-                    </span>
-                  )}
-                </td>
-                <td className="detail" title={detail}>
-                  {detail}
-                </td>
-                <td className="actions">
-                  {canStart(row) && (
-                    <button disabled={busy} onClick={() => onStart(row.id)}>
-                      Start
-                    </button>
-                  )}
-                  {canStop(row) && (
-                    <button disabled={busy} onClick={() => onStop(row.id)}>
-                      Stop
-                    </button>
-                  )}
-                  <button disabled={busy} onClick={() => onRestart(row.id)}>
-                    Restart
-                  </button>
-                  <button onClick={() => onEdit(row)}>Edit</button>
-                  <button onClick={() => onDuplicate(row)}>Duplicate</button>
-                  <button onClick={() => onShowLogs(row)}>Logs</button>
-                  {confirmDelete === row.id ? (
-                    <>
+                  <div className="actions-cell">
+                    {canStart && (
                       <button
-                        className="danger"
-                        disabled={busy}
-                        onClick={() => {
-                          setConfirmDelete(null);
-                          onDelete(row.id);
-                        }}
+                        className="act act--play"
+                        type="button"
+                        aria-label={`Start ${row.name}`}
+                        title="Start"
+                        onClick={() => onStart(row.id)}
                       >
-                        Confirm
+                        <Icon name="play" size={13} />
                       </button>
-                      <button onClick={() => setConfirmDelete(null)}>
-                        Cancel
+                    )}
+                    {canStop && (
+                      <button
+                        className="act act--stop"
+                        type="button"
+                        aria-label={`Stop ${row.name}`}
+                        title="Stop"
+                        onClick={() => onStop(row.id)}
+                      >
+                        <Icon name="stop" size={13} />
                       </button>
-                    </>
-                  ) : (
+                    )}
+                    {busy && (
+                      <button className="act act--busy" type="button" disabled aria-label="Working">
+                        <Icon name="loader" size={13} className="spinner" />
+                      </button>
+                    )}
                     <button
-                      className="danger-ghost"
-                      onClick={() => setConfirmDelete(row.id)}
+                      className="act"
+                      type="button"
+                      aria-label={`More actions for ${row.name}`}
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.id === row.id}
+                      title="More actions"
+                      onClick={(e) => {
+                        const anchor = e.currentTarget;
+                        setMenu((m) => (m?.id === row.id ? null : { id: row.id, anchor }));
+                      }}
                     >
-                      Delete
+                      <Icon name="more" size={14} />
                     </button>
-                  )}
+                  </div>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-    </div>
+
+      {menu && menuRow && (
+        <Menu
+          anchor={menu.anchor}
+          entries={menuEntries}
+          label={`Actions for ${menuRow.name}`}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </>
   );
 }

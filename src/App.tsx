@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
 import { Toasts, useToasts } from "./components/Toasts";
@@ -86,6 +87,8 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.dataset.theme as Theme) ?? "dark",
   );
+  const [deleteTargets, setDeleteTargets] = useState<TunnelRow[] | null>(null);
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
   const { items: toasts, push: toast } = useToasts();
   const prevStates = useRef<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -138,6 +141,8 @@ export default function App() {
         e.preventDefault();
         searchRef.current?.focus();
       } else if (e.key === "Escape") {
+        // An open <dialog> handles Esc itself through its cancel event.
+        if (document.querySelector("dialog[open]")) return;
         if (formTarget !== undefined || logTarget) {
           setDraft(null);
           setFormTarget(undefined);
@@ -307,6 +312,56 @@ export default function App() {
     [visibleRows, reload, toast],
   );
 
+  const deleteContent = useMemo<ConfirmContent | null>(() => {
+    if (!deleteTargets || deleteTargets.length === 0) return null;
+    const one = deleteTargets.length === 1;
+    return {
+      title: one ? "Delete tunnel?" : `Delete ${deleteTargets.length} tunnels?`,
+      text:
+        (one ? "This removes the saved profile" : "This removes the saved profiles") +
+        " and any passphrase stored in the OS keychain. A running process is stopped first. This cannot be undone.",
+      target: one
+        ? `${deleteTargets[0].name} — ${deleteTargets[0].sshTarget}`
+        : deleteTargets.map((r) => r.name).join(", "),
+      confirmLabel: one ? "Delete tunnel" : `Delete ${deleteTargets.length} tunnels`,
+    };
+  }, [deleteTargets]);
+
+  const confirmDelete = useCallback(() => {
+    const targets = deleteTargets ?? [];
+    setDeleteTargets(null);
+    if (targets.length === 0) return;
+    const ids = targets.map((r) => r.id);
+    // Let the rows animate out before they disappear from the data.
+    setLeaving((cur) => new Set([...cur, ...ids]));
+    setTimeout(async () => {
+      let removed = 0;
+      for (const row of targets) {
+        try {
+          await deleteTunnel(row.id);
+          removed += 1;
+        } catch (e) {
+          toast(`Could not delete "${row.name}": ${String(e)}`, "error");
+        }
+      }
+      setLogTarget((cur) => (cur && ids.includes(cur.id) ? null : cur));
+      await reload();
+      setLeaving((cur) => {
+        const next = new Set(cur);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (removed > 0) {
+        toast(
+          removed === 1 && targets.length === 1
+            ? `Deleted "${targets[0].name}"`
+            : `Deleted ${plural(removed, "tunnel")}`,
+          "success",
+        );
+      }
+    }, 180);
+  }, [deleteTargets, reload, toast]);
+
   const moreEntries: MenuEntry[] = [
     { kind: "label", key: "import-label", label: "Import" },
     {
@@ -420,12 +475,14 @@ export default function App() {
             )}
             <TunnelList
               rows={visibleRows}
+              totalCount={rows.length}
+              query={query}
               pending={pending}
-              actionError={null}
+              leaving={leaving}
               onStart={(id) => runAction(id, startTunnel)}
               onStop={(id) => runAction(id, stopTunnel)}
               onRestart={(id) => runAction(id, restartTunnel)}
-              onDelete={(id) => runAction(id, deleteTunnel)}
+              onRequestDelete={(row) => setDeleteTargets([row])}
               onEdit={(row) => {
                 setDraft(null);
                 setSaveError(null);
@@ -433,10 +490,22 @@ export default function App() {
               }}
               onDuplicate={handleDuplicate}
               onShowLogs={setLogTarget}
+              onCreate={openNew}
+              onImportSsh={handleImportSsh}
+              onClearQuery={() => {
+                setQuery("");
+                searchRef.current?.focus();
+              }}
             />
           </div>
         </main>
       </div>
+
+      <ConfirmModal
+        content={deleteContent}
+        onCancel={() => setDeleteTargets(null)}
+        onConfirm={confirmDelete}
+      />
 
       {logTarget && (
         <LogDrawer
