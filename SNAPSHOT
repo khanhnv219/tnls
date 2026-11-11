@@ -1,7 +1,7 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-11-09 (re-sync: 44 commits, phase 5 + close-to-tray prompt)
-Status: UI redesign xong (phase 1–5); nút đóng hỏi minimize-to-tray / quit
+Last updated: 2026-11-09 (re-sync: 52 commits, P1.1–P1.3 + startup degraded fix)
+Status: P1 xong (diagnostics, port conflict, tags); chờ test tay trên app thật
 Current phase: UI redesign DONE — Phase 2 DONE (6/6), Phase 3 (russh) gác
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
@@ -68,7 +68,12 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 | 43 | d1d3aca feat(tray): ask to minimize to tray or quit on window close | tray.rs, hide_to_tray/quit_app, CloseAppModal | DONE |
 | 44 | 21dd565 docs: re-sync snapshot after phase 5 and close prompt | SNAPSHOT | DONE |
 | 45 | 5cde102 fix(logs): record tunnel lifecycle events in the tunnel log | manager.rs log_event, LogLine::tnls | DONE |
-| 46 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
+| 46 | a587262 docs: re-sync snapshot after lifecycle log fix | SNAPSHOT | DONE |
+| 47 | 79a818d fix(core): don't report Degraded while ssh is still connecting | manager.rs probe_while_starting (20 s, dial 500 ms) | DONE |
+| 48 | f40f90d feat(tags): group tunnels with tags (schema v4) | tunnel tags, persistence v4, TagInput, tag filter, group actions | DONE |
+| 49 | f6ad35e feat(ports): detect local port conflicts before starting a tunnel | ports.rs, manager check_conflict, PortConflictModal, take_over_port | DONE |
+| 50 | 19be20b feat(diagnose): staged, read-only connection diagnostics | diagnose.rs, SshPurpose probes, diagnose_tunnel, DiagnoseModal | DONE |
+| 51 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
 
 > Lưu ý: commit 24 và 25 có message trùng phần "Phase 2: Retry policy UI" do re-apply sau khi sửa ssh.rs; commit 25 thực chất là fix console window (diff duy nhất: `src-tauri/crates/core/src/ssh.rs` + `SNAPSHOT`).
 
@@ -102,6 +107,14 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 - [2026-11-09] UI redesign theo design system OpenDesign (commits 27–37): tokens/app.css giữ nguyên bản export, icon sprite, theme dark/light, topbar + overflow menu, bảng mới (rail, mode chip, copy, badge 7 state), multi-select + bulk bar, modal xoá, form drawer chia section, log drawer kiểu console, dialog import JSON, cửa sổ 1280x800.
 - [2026-11-09] User xác nhận redesign chạy với data thật (`npm run tauri dev`).
 - [2026-11-09] Phase 5 + tray (commits 39–43): test dùng port ephemeral; sửa log lặp khi ssh thoát; log có timestamp + level từ backend; preview lệnh ssh trong form dùng chung code với build_argv; nút đóng hỏi minimize-to-tray / quit (nhớ lựa chọn, đổi trong menu ⋯), tray mở lại window, stop tunnel ở mọi đường exit.
+
+## Checks (commit 50 — HEAD)
+
+- `cargo test -p tnls-core`: OK, 84 passed / 0 failed / 2 ignored. Hai test ignored chạy ssh thật (`cargo test -p tnls-core real_ssh -- --ignored`): DNS failure và port đóng → đều OK trên máy dev.
+- `cargo clippy --workspace --all-targets -- -D warnings`: OK; `cargo fmt --all -- --check`: OK.
+- `npx tsc --noEmit`: OK; `npm run build`: OK.
+- Ảnh chụp headless Edge với backend giả: tag filter + group actions, tag editor, dialog port conflict (tunnel tnls / process ngoài), dialog diagnostics (fail ở bước 3 / pass).
+- Chưa test trên app thật: diagnostics với server thật (auth OK / sai key / đích chết), conflict giữa 2 tunnel thật, migration v4 trên DB thật, luồng đóng app.
 
 ## Changed files (commits 39–43)
 
@@ -138,6 +151,7 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 ## Next
 
 - Test tay luồng đóng app trên app thật (xem Checks).
-- Nghi vấn: "Tunnel degraded" ngay sau khi start là báo nhầm. Startup grace chỉ 400 ms, trong khi OpenSSH chỉ mở port -L sau khi xác thực xong; lần dial tiếp theo cách 10 s nên tunnel kẹt Degraded rồi mới "recovered". Cần xác nhận bằng log (dòng `tnls: degraded` ngay sau `tnls: ssh started`) trước khi sửa (giữ Starting và dial lại tới khi port mở hoặc hết thời gian chờ).
+- Đã xác nhận bằng log user và sửa ở commit 47: "degraded" ngay sau start là báo nhầm.
+- Passphrase trong keychain chưa được đưa cho ssh (BatchMode=yes): key có passphrase cần ssh-agent. Cần quyết định có làm SSH_ASKPASS hay không.
 - Còn thiếu so với design: nút Browse cho identity file (cần plugin dialog), font Söhne/JetBrains Mono (đang fallback Segoe UI / Cascadia Mono).
 - Timestamp log là thời điểm supervisor gom dòng (≤250 ms sau khi ssh ghi); nếu cần chính xác hơn thì stamp trong thread đọc stderr.
