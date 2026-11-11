@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::health::{self, HEALTH_TIMEOUT};
-use crate::logs::LogLine;
+use crate::logs::{LogLevel, LogLine};
 use crate::ssh::{self, SshChild, STARTUP_GRACE_MS};
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelState, TunnelStatus};
 
@@ -191,11 +191,15 @@ impl Runtime {
     fn push_logs(&mut self, lines: Vec<String>) {
         let at = Utc::now();
         for line in lines {
-            if self.logs.len() >= LOG_CAP {
-                self.logs.pop_front();
-            }
-            self.logs.push_back(LogLine::new(at, line));
+            self.push_line(LogLine::new(at, line));
         }
+    }
+
+    fn push_line(&mut self, line: LogLine) {
+        if self.logs.len() >= LOG_CAP {
+            self.logs.pop_front();
+        }
+        self.logs.push_back(line);
     }
 }
 
@@ -251,11 +255,66 @@ impl<S: Spawner> TunnelManager<S> {
     }
 
     fn emit(&mut self, id: &str, kind: ManagerEventKind) {
+        let at = Utc::now();
+        self.log_event(id, &kind, at);
         self.events.push_back(ManagerEvent {
             id: id.to_owned(),
             kind,
-            at: Utc::now(),
+            at,
         });
+    }
+
+    /// Mirror lifecycle events into the tunnel's log. A healthy ssh with
+    /// BatchMode writes nothing to stderr, so without these lines the log
+    /// stays empty while desktop notifications report what happened.
+    fn log_event(&mut self, id: &str, kind: &ManagerEventKind, at: DateTime<Utc>) {
+        let (endpoint, remote) = match self.configs.get(id) {
+            Some(c) => (
+                c.local_endpoint(),
+                c.mode == crate::tunnel::TunnelMode::Remote,
+            ),
+            None => (String::new(), false),
+        };
+        let line = match kind {
+            ManagerEventKind::Started { pid } => Some((
+                LogLevel::Info,
+                if remote {
+                    format!("ssh started (pid {pid})")
+                } else {
+                    format!("ssh started (pid {pid}), waiting for {endpoint} to accept connections")
+                },
+            )),
+            ManagerEventKind::StateChanged(TunnelState::Running) => Some((
+                LogLevel::Info,
+                if remote {
+                    "running: ssh process is up".to_owned()
+                } else {
+                    format!("running: {endpoint} is accepting connections")
+                },
+            )),
+            // Other transitions are covered by their own events below.
+            ManagerEventKind::StateChanged(_) => None,
+            ManagerEventKind::HealthChanged { healthy: false } => Some((
+                LogLevel::Warn,
+                format!("degraded: ssh is alive but {endpoint} is not accepting connections"),
+            )),
+            // Recovery is logged by the StateChanged(Running) that precedes it.
+            ManagerEventKind::HealthChanged { healthy: true } => None,
+            ManagerEventKind::RetryScheduled {
+                attempt,
+                delay_secs,
+            } => Some((
+                LogLevel::Warn,
+                format!("retry {attempt} scheduled in {delay_secs}s"),
+            )),
+            ManagerEventKind::Failed { error } => {
+                Some((LogLevel::Error, format!("failed: {error}")))
+            }
+            ManagerEventKind::Stopped => Some((LogLevel::Info, "stopped".to_owned())),
+        };
+        if let (Some((level, message)), Some(rt)) = (line, self.runtimes.get_mut(id)) {
+            rt.push_line(LogLine::tnls(at, level, &message));
+        }
     }
 
     fn set_state(&mut self, id: &str, state: TunnelState) {
@@ -974,14 +1033,67 @@ mod tests {
         m.start("loggy").unwrap();
         m.poll(Instant::now());
         let logs = m.logs("loggy", 10).unwrap();
-        assert_eq!(logs.len(), 2);
-        assert!(logs[0].text.contains("Connecting"));
-        assert_eq!(logs[0].level, crate::logs::LogLevel::Debug);
+        let ssh: Vec<_> = logs
+            .iter()
+            .filter(|l| !l.text.starts_with("tnls:"))
+            .collect();
+        assert_eq!(ssh.len(), 2);
+        assert!(ssh[0].text.contains("Connecting"));
+        assert_eq!(ssh[0].level, LogLevel::Debug);
         let events = m.drain_events();
         assert!(events
             .iter()
             .any(|e| matches!(e.kind, ManagerEventKind::Started { .. })));
         assert!(m.drain_events().is_empty());
+    }
+
+    #[test]
+    fn lifecycle_events_are_written_to_the_log() {
+        // Silent ssh (the normal BatchMode case): the log must still explain
+        // start, degrade, recovery and stop.
+        let mut m = manager_with_health(vec![true, false, true]);
+        m.upsert_config(local_config("life", free_port()));
+        m.start("life").unwrap();
+        m.poll(Instant::now()); // promote: healthy -> Running
+        m.poll(Instant::now()); // recheck: unhealthy -> Degraded
+        m.poll(Instant::now()); // recheck: healthy -> Running
+        m.stop("life").unwrap();
+
+        let logs = m.logs("life", 50).unwrap();
+        let texts: Vec<&str> = logs.iter().map(|l| l.text.as_str()).collect();
+        assert!(texts[0].starts_with("tnls: ssh started (pid"), "{texts:?}");
+        assert!(texts.iter().any(|t| t.starts_with("tnls: running:")));
+        let degraded = logs
+            .iter()
+            .find(|l| l.text.starts_with("tnls: degraded:"))
+            .expect("degraded line");
+        assert_eq!(degraded.level, LogLevel::Warn);
+        assert_eq!(
+            texts
+                .iter()
+                .filter(|t| t.starts_with("tnls: running:"))
+                .count(),
+            2
+        );
+        assert_eq!(texts.last(), Some(&"tnls: stopped"));
+    }
+
+    #[test]
+    fn failures_and_retries_are_written_to_the_log() {
+        let mut m = manager();
+        m.spawner.live_polls = 0;
+        m.spawner.code = 255;
+        m.spawner.stderr = vec!["ssh: connect to host x port 22: Connection timed out".into()];
+        m.upsert_config(local_config("flog", free_port()));
+        m.start("flog").unwrap_err();
+
+        let logs = m.logs("flog", 50).unwrap();
+        assert!(logs
+            .iter()
+            .any(|l| l.text.starts_with("ssh: connect") && l.level == LogLevel::Error));
+        assert!(logs
+            .iter()
+            .any(|l| l.text.starts_with("tnls: retry 1 scheduled") && l.level == LogLevel::Warn));
     }
 
     #[test]

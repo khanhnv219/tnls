@@ -24,11 +24,22 @@ pub struct LogLine {
 }
 
 impl LogLine {
+    /// An ssh stderr line; the level is inferred from its wording.
     pub fn new(at: DateTime<Utc>, text: String) -> Self {
         Self {
             at,
             level: classify_level(&text),
             text,
+        }
+    }
+
+    /// A line written by tnls itself (lifecycle, health, retries), always
+    /// prefixed `tnls:` so it is distinguishable from ssh output.
+    pub fn tnls(at: DateTime<Utc>, level: LogLevel, message: &str) -> Self {
+        Self {
+            at,
+            level,
+            text: format!("tnls: {message}"),
         }
     }
 }
