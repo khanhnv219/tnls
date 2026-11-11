@@ -109,7 +109,7 @@ pub fn build_argv(config: &TunnelConfig) -> Result<Vec<OsString>, TunnelError> {
 /// A spawned ssh child with a background stderr pump.
 pub struct SshChild {
     child: Child,
-    stderr_handle: Option<JoinHandle<Vec<String>>>,
+    stderr_handle: Option<JoinHandle<()>>,
 }
 
 impl SshChild {
@@ -139,13 +139,12 @@ impl SshChild {
         let handle = thread::Builder::new()
             .name(format!("ssh-stderr-{}", config.id))
             .spawn(move || {
+                // Every line goes through the channel exactly once; the
+                // receiver is the only owner of stderr history.
                 let reader = BufReader::new(stderr);
-                let mut kept = Vec::new();
                 for line in reader.lines().map_while(Result::ok) {
-                    kept.push(line.clone());
                     let _ = tx.send(line);
                 }
-                kept
             })
             .map_err(|e| TunnelError::SpawnFailed(format!("spawn stderr pump: {e}")))?;
         Ok((
@@ -176,16 +175,14 @@ impl SshChild {
             .map_err(|e| TunnelError::Storage(format!("kill ssh: {e}")))
     }
 
-    /// Wait for exit and collect tail of stderr (bounded).
-    pub fn wait_with_tail(mut self, tail: usize) -> (Option<i32>, Vec<String>) {
+    /// Wait for exit and for the stderr pump to finish, so every line the
+    /// process wrote is in the channel before the caller drains it.
+    pub fn wait(mut self) -> Option<i32> {
         let code = self.child.wait().ok().and_then(|s| s.code());
-        let lines = self
-            .stderr_handle
-            .take()
-            .and_then(|h| h.join().ok())
-            .unwrap_or_default();
-        let start = lines.len().saturating_sub(tail);
-        (code, lines[start..].to_vec())
+        if let Some(handle) = self.stderr_handle.take() {
+            let _ = handle.join();
+        }
+        code
     }
 }
 

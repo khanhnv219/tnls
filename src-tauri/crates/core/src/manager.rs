@@ -45,7 +45,8 @@ pub trait ManagedChild: Send {
     /// `Ok(true)` while the process is still alive.
     fn is_alive(&mut self) -> Result<bool, TunnelError>;
     fn kill(&mut self) -> Result<(), TunnelError>;
-    /// Blocking reap: wait for exit, return code + stderr tail.
+    /// Blocking reap: wait for exit, return code + the stderr lines that
+    /// `drain_stderr` has not returned yet (at most `tail`).
     fn reap(&mut self, tail: usize) -> (Option<i32>, Vec<String>);
     /// Non-blocking drain of stderr lines received so far.
     fn drain_stderr(&mut self) -> Vec<String>;
@@ -107,11 +108,16 @@ impl ManagedChild for RealChild {
         }
     }
 
+    /// Returns only lines not yet handed out by `drain_stderr`, so callers
+    /// can append them to the log without duplicating earlier output.
     fn reap(&mut self, tail: usize) -> (Option<i32>, Vec<String>) {
-        match self.child.take() {
-            Some(c) => c.wait_with_tail(tail),
-            None => (None, Vec::new()),
-        }
+        let Some(child) = self.child.take() else {
+            return (None, Vec::new());
+        };
+        let code = child.wait();
+        let rest: Vec<String> = self.rx.try_iter().collect();
+        let start = rest.len().saturating_sub(tail);
+        (code, rest[start..].to_vec())
     }
 
     fn drain_stderr(&mut self) -> Vec<String> {
