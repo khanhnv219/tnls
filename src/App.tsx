@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar } from "./components/BulkBar";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
+import { Drawer } from "./components/Drawer";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
 import { Toasts, useToasts } from "./components/Toasts";
@@ -17,6 +18,7 @@ import {
   listTunnels,
   onTunnelEvent,
   restartTunnel,
+  setPassphrase,
   startTunnel,
   stopTunnel,
   updateTunnel,
@@ -137,6 +139,11 @@ export default function App() {
     setFormTarget(null);
   }, []);
 
+  const closeForm = useCallback(() => {
+    setDraft(null);
+    setFormTarget(undefined);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -230,28 +237,38 @@ export default function App() {
   }, [rows, query]);
 
   const handleSave = useCallback(
-    async (input: TunnelInput): Promise<TunnelConfig | void> => {
+    async (input: TunnelInput, passphrase: string): Promise<void> => {
       setSaving(true);
       setSaveError(null);
+      const editing = formTarget?.id ? formTarget : null;
+      let saved: TunnelConfig;
       try {
-        let saved: TunnelConfig | void;
-        if (formTarget?.id) {
-          saved = await updateTunnel(formTarget.id, input);
-        } else {
-          saved = await createTunnel(input);
-        }
-        setDraft(null);
-        setFormTarget(undefined);
-        reload();
-        return saved;
+        saved = editing
+          ? await updateTunnel(editing.id, input)
+          : await createTunnel(input);
       } catch (e) {
         setSaveError(String(e));
         throw e;
       } finally {
         setSaving(false);
       }
+      setDraft(null);
+      setFormTarget(undefined);
+      toast(
+        editing ? `Saved changes to "${saved.name}"` : `Created tunnel "${saved.name}"`,
+        "success",
+      );
+      if (passphrase.trim() !== "") {
+        try {
+          await setPassphrase(saved.id, passphrase);
+          toast("Passphrase saved to OS keychain", "success");
+        } catch (e) {
+          toast(`Keychain save failed: ${String(e)}`, "error");
+        }
+      }
+      reload();
     },
-    [formTarget, reload],
+    [formTarget, reload, toast],
   );
 
   const handleDuplicate = useCallback((row: TunnelRow) => {
@@ -577,20 +594,20 @@ export default function App() {
         />
       )}
 
-      {formTarget !== undefined && (
-        <TunnelForm
-          key={formTarget?.id ?? `new-${draft?.name ?? "blank"}`}
-          initial={formTarget}
-          draft={draft}
-          saving={saving}
-          saveError={saveError}
-          onSave={handleSave}
-          onClose={() => {
-            setDraft(null);
-            setFormTarget(undefined);
-          }}
-        />
-      )}
+      <Drawer open={formTarget !== undefined} labelledBy="form-title" onClose={closeForm}>
+        {formTarget !== undefined && (
+          <TunnelForm
+            key={formTarget?.id ?? `new-${draft?.name ?? "blank"}`}
+            initial={formTarget}
+            draft={draft}
+            saving={saving}
+            saveError={saveError}
+            onSave={handleSave}
+            onClose={closeForm}
+            notify={toast}
+          />
+        )}
+      </Drawer>
 
       <Toasts items={toasts} />
     </>

@@ -1,0 +1,16 @@
+/* ==========================================================================
+   Fixes on top of the verbatim design-system stylesheets (tokens.css, app.css).
+   Keep this file small and token-only; when the export is regenerated, check
+   whether each rule is still needed.
+   ========================================================================== */
+
+/* app.css never resets paragraph margins, so hints and errors rendered as <p>
+   inherit the UA 1em margin and break the 6px field stack (DESIGN_SYSTEM.md
+   §4.1). The OpenDesign kit shows the same gap. */
+.field__hint,
+.field__error,
+.passphrase-note,
+.form-error,
+.modal__text {
+  margin: 0;
+}

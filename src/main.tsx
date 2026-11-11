@@ -5,6 +5,7 @@ import { IconSprite } from "./components/Icon";
 import { applyTheme, initialTheme } from "./lib/theme";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/overrides.css";
 
 // Set the theme before the first paint so there is no flash of the wrong one.
 applyTheme(initialTheme());
