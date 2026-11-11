@@ -31,3 +31,30 @@ textarea.input {
   border-color: var(--line);
   color: var(--text-2);
 }
+
+/* Responsive column drop. app.css hides the cells of dropped columns with
+   display:none but keeps their <col> elements, so the remaining cells shift
+   left into the wrong (zero-width) columns: at <=960px the Local value lands
+   in the Mode column and disappears. Removing the matching <col> keeps the
+   cell-to-column mapping intact. */
+@media (max-width: 960px) {
+  .tunnels col.col-mode,
+  .tunnels col.col-detail {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .tunnels col.col-remote {
+    display: none;
+  }
+}
+
+/* Name cell truncates like every other cell (DESIGN_SYSTEM.md §5.2) instead of
+   wrapping and growing the row past --row-h. */
+.name-stack__title,
+.name-stack__sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
