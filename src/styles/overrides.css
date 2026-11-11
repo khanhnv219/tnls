@@ -14,3 +14,20 @@
 .modal__text {
   margin: 0;
 }
+
+/* JSON import dialog: a multi-line .input and a non-destructive icon tile.
+   The design system only specifies the single-line input and the danger
+   tile used by the delete dialog. */
+textarea.input {
+  height: auto;
+  min-height: 168px;
+  padding: var(--s-2) var(--s-3);
+  line-height: var(--leading-snug);
+  resize: vertical;
+}
+
+.modal__icon--neutral {
+  background: var(--ground-3);
+  border-color: var(--line);
+  color: var(--text-2);
+}

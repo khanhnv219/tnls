@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar } from "./components/BulkBar";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { Drawer } from "./components/Drawer";
+import { ImportJsonModal } from "./components/ImportJsonModal";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
 import { Toasts, useToasts } from "./components/Toasts";
@@ -95,6 +96,7 @@ export default function App() {
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
   const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const { items: toasts, push: toast } = useToasts();
   const prevStates = useRef<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -319,17 +321,16 @@ export default function App() {
     }
   }, [rows.length, toast]);
 
-  const handleImportJson = useCallback(async () => {
-    const json = prompt("Paste tunnels JSON (array of TunnelInput):");
-    if (!json) return;
-    try {
+  const handleImportJson = useCallback(
+    async (json: string) => {
+      // Errors propagate to the dialog, which shows them next to the input.
       const created = await importTunnelsJson(json);
+      setImportOpen(false);
       toast(`Imported ${plural(created.length, "tunnel")} from JSON`, "success");
       reload();
-    } catch (e) {
-      toast(`Import failed: ${String(e)}`, "error");
-    }
-  }, [reload, toast]);
+    },
+    [reload, toast],
+  );
 
   const handleImportSsh = useCallback(async () => {
     try {
@@ -471,7 +472,7 @@ export default function App() {
       key: "import-json",
       label: "From JSON",
       icon: "upload",
-      onSelect: handleImportJson,
+      onSelect: () => setImportOpen(true),
     },
     { kind: "sep", key: "sep-1" },
     { kind: "label", key: "export-label", label: "Export" },
@@ -597,6 +598,12 @@ export default function App() {
           />
         </main>
       </div>
+
+      <ImportJsonModal
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onImport={handleImportJson}
+      />
 
       <ConfirmModal
         content={deleteContent}
