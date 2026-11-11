@@ -34,6 +34,11 @@ const DEFAULT_RETRY_DELAYS: [Duration; 5] = [
 const DEFAULT_MAX_RETRIES: u32 = 5;
 /// Uptime after which the retry counter resets.
 const STABLE_UPTIME: Duration = Duration::from_secs(60);
+/// How long a Starting tunnel may wait for ssh to open its local listener
+/// (connect + auth, possibly through a jump host) before it counts as Degraded.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+/// Re-dial cadence for the local listener while Starting.
+const STARTUP_DIAL_INTERVAL: Duration = Duration::from_millis(500);
 /// stderr lines kept per tunnel (ring buffer).
 const LOG_CAP: usize = 500;
 /// stderr tail length used for failure classification.
@@ -213,6 +218,10 @@ pub struct TunnelManager<S: Spawner = SshSpawner> {
     retry_delays: Vec<Duration>,
     max_retries: u32,
     startup_grace: Duration,
+    /// How long a Starting tunnel may wait for its local listener.
+    startup_timeout: Duration,
+    /// Re-dial cadence while Starting.
+    startup_dial_interval: Duration,
     health_interval: Duration,
 }
 
@@ -227,6 +236,8 @@ impl<S: Spawner> TunnelManager<S> {
             retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
             max_retries: DEFAULT_MAX_RETRIES,
             startup_grace: Duration::from_millis(STARTUP_GRACE_MS),
+            startup_timeout: STARTUP_TIMEOUT,
+            startup_dial_interval: STARTUP_DIAL_INTERVAL,
             health_interval: Duration::from_secs(10),
         }
     }
@@ -252,6 +263,12 @@ impl<S: Spawner> TunnelManager<S> {
 
     pub fn set_startup_grace(&mut self, grace: Duration) {
         self.startup_grace = grace;
+    }
+
+    /// How long Starting may wait for the local listener before Degraded.
+    pub fn set_startup_timeout(&mut self, timeout: Duration, dial_interval: Duration) {
+        self.startup_timeout = timeout;
+        self.startup_dial_interval = dial_interval;
     }
 
     fn emit(&mut self, id: &str, kind: ManagerEventKind) {
@@ -322,6 +339,44 @@ impl<S: Spawner> TunnelManager<S> {
             rt.status.state = state;
         }
         self.emit(id, ManagerEventKind::StateChanged(state));
+    }
+
+    /// Starting → Running once the local endpoint accepts a connection.
+    ///
+    /// OpenSSH binds `-L`/`-D` listeners only after the connection and
+    /// authentication finish, which usually takes longer than the startup
+    /// grace. So a closed port while Starting is expected: re-dial every
+    /// `startup_dial_interval` and only report Degraded after
+    /// `startup_timeout` without a listener.
+    fn probe_while_starting(&mut self, id: &str, now: Instant) {
+        let (due, waited) = {
+            let rt = &self.runtimes[id];
+            let due = rt
+                .last_health_check
+                .is_none_or(|t| now - t >= self.startup_dial_interval);
+            let waited = rt
+                .incarnation_started
+                .map_or(Duration::ZERO, |t| now.saturating_duration_since(t));
+            (due, waited)
+        };
+        if !due {
+            return;
+        }
+        let Some(endpoint) = self.configs.get(id).map(TunnelConfig::local_endpoint) else {
+            return;
+        };
+        let healthy = self.checker.check(&endpoint);
+        {
+            let rt = self.runtimes.get_mut(id).expect("runtime exists");
+            rt.last_health_check = Some(now);
+            rt.last_healthy = Some(healthy);
+        }
+        if healthy {
+            self.set_state(id, TunnelState::Running);
+        } else if waited >= self.startup_timeout {
+            self.set_state(id, TunnelState::Degraded);
+            self.emit(id, ManagerEventKind::HealthChanged { healthy: false });
+        }
     }
 
     /// Re-dial a Running/Degraded tunnel at most every `health_interval`.
@@ -583,16 +638,7 @@ impl<S: Spawner> TunnelManager<S> {
                         if config.mode == crate::tunnel::TunnelMode::Remote {
                             self.set_state(&id, TunnelState::Running);
                         } else {
-                            let endpoint = config.local_endpoint();
-                            let healthy = self.checker.check(&endpoint);
-                            self.runtimes.get_mut(&id).expect("filtered").last_healthy =
-                                Some(healthy);
-                            if healthy {
-                                self.set_state(&id, TunnelState::Running);
-                            } else {
-                                self.set_state(&id, TunnelState::Degraded);
-                                self.emit(&id, ManagerEventKind::HealthChanged { healthy: false });
-                            }
+                            self.probe_while_starting(&id, now);
                         }
                     } else if state == TunnelState::Running || state == TunnelState::Degraded {
                         // Only re-check health for local/dynamic.
@@ -875,10 +921,47 @@ mod tests {
     fn manager_with_health(answers: Vec<bool>) -> TunnelManager<FakeSpawner> {
         let mut m = TunnelManager::new(FakeSpawner::ok());
         m.set_startup_grace(Duration::ZERO);
+        m.set_startup_timeout(Duration::ZERO, Duration::ZERO);
         m.set_retry_delays(vec![Duration::ZERO]);
         m.set_health_checker(Box::new(ScriptedHealth { answers }));
         m.set_health_interval(Duration::ZERO);
         m
+    }
+
+    #[test]
+    fn closed_port_while_starting_waits_instead_of_degrading() {
+        // ssh is still authenticating: the first dials fail, then it binds.
+        let mut m = manager_with_health(vec![false, false, true]);
+        m.set_startup_timeout(Duration::from_secs(20), Duration::ZERO);
+        m.upsert_config(local_config("slow", free_port()));
+        m.start("slow").unwrap();
+        m.poll(Instant::now());
+        m.poll(Instant::now());
+        assert_eq!(m.status("slow").unwrap().state, TunnelState::Starting);
+        m.poll(Instant::now());
+        assert_eq!(m.status("slow").unwrap().state, TunnelState::Running);
+        let events = m.drain_events();
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e.kind, ManagerEventKind::HealthChanged { .. })));
+        assert!(!m
+            .logs("slow", 50)
+            .unwrap()
+            .iter()
+            .any(|l| l.text.starts_with("tnls: degraded")));
+    }
+
+    #[test]
+    fn listener_that_never_opens_degrades_after_timeout() {
+        let mut m = manager_with_health(vec![false]);
+        m.set_startup_timeout(Duration::from_secs(20), Duration::ZERO);
+        m.upsert_config(local_config("never", free_port()));
+        m.start("never").unwrap();
+        let t0 = Instant::now();
+        m.poll(t0);
+        assert_eq!(m.status("never").unwrap().state, TunnelState::Starting);
+        m.poll(t0 + Duration::from_secs(21));
+        assert_eq!(m.status("never").unwrap().state, TunnelState::Degraded);
     }
 
     #[test]
