@@ -1,8 +1,8 @@
 # SNAPSHOT — tnls (SSH tunnel manager)
 
-Last updated: 2026-10-11 (re-sync: 25 commits, fix console window)
-Status: fix done — Phase 2 hoàn tất (6/6), Phase 3 (russh) gác theo yêu cầu
-Current phase: Phase 2 DONE (6/6) + fix console window
+Last updated: 2026-11-09 (re-sync: 38 commits, UI redesign theo design system)
+Status: UI redesign xong (phase 1–4); phase 5 (SSH preview + log timestamp/level ở backend) chờ quyết định
+Current phase: UI redesign DONE (frontend) — Phase 2 DONE (6/6), Phase 3 (russh) gác
 Toolchain: rustc 1.96.0 MSVC 14.29 (VS2019, override pinned for repo), Node v24.14.0, OpenSSH_for_Windows_9.5p1
 
 ## Product
@@ -48,6 +48,20 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 | 24 | 1694415 Phase 2: Retry policy UI (per-tunnel maxRetries/delay) | DB v3, per-tunnel retry | DONE |
 | 25 | 748512e fix: suppress console window for ssh on Windows | ssh CREATE_NO_WINDOW | DONE |
 
+| 26 | ac0c64d docs: re-sync snapshot to 25 commits | SNAPSHOT | DONE |
+| 27 | 63b1b9d docs: add UI design brief | docs/DESIGN_BRIEF.md | DONE |
+| 28 | a7aa835 docs: add design system spec, ignore OpenDesign export | docs/DESIGN_SYSTEM.md, docs/design-system.html, .gitignore | DONE |
+| 29 | 42d90de feat(ui): adopt design system tokens, styles and icon sprite | src/styles/{tokens,app}.css, Icon.tsx, theme | DONE |
+| 30 | c39491d feat(ui): app shell, topbar, overflow menu and toasts | Topbar, Menu, Toasts | DONE |
+| 31 | 7df4db4 feat(ui): redesigned tunnel table, row menu and delete modal | TunnelList, StatusBadge, ConfirmModal | DONE |
+| 32 | d276f2d feat(ui): row selection and bulk action bar | BulkBar, selection, Delete key | DONE |
+| 33 | 03f0a77 feat(ui): sectioned tunnel form drawer | Drawer, TunnelForm, overrides.css | DONE |
+| 34 | 38dae0d feat(ui): console-style log drawer | LogDrawer, lib/logs.ts, phím L | DONE |
+| 35 | 20351e8 feat(ui): JSON import dialog replaces prompt() | ImportJsonModal | DONE |
+| 36 | 12249b4 fix(ui): keep table columns aligned when narrow columns drop | overrides.css | DONE |
+| 37 | 2c43bd1 chore(tauri): open at 1280x800 with a 720x480 minimum | tauri.conf.json | DONE |
+| 38 | (commit này) docs: re-sync snapshot | SNAPSHOT | DONE |
+
 > Lưu ý: commit 24 và 25 có message trùng phần "Phase 2: Retry policy UI" do re-apply sau khi sửa ssh.rs; commit 25 thực chất là fix console window (diff duy nhất: `src-tauri/crates/core/src/ssh.rs` + `SNAPSHOT`).
 
 ## Completed
@@ -77,21 +91,24 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 - [2026-10-10] Phase 2: OS keychain passphrase (commit 23 — 22b22c3).
 - [2026-10-10] Phase 2: Retry policy UI per-tunnel (commit 24 — 1694415).
 - [2026-10-10] Fix: suppress console window for ssh on Windows (commit 25 — 748512e).
+- [2026-11-09] UI redesign theo design system OpenDesign (commits 27–37): tokens/app.css giữ nguyên bản export, icon sprite, theme dark/light, topbar + overflow menu, bảng mới (rail, mode chip, copy, badge 7 state), multi-select + bulk bar, modal xoá, form drawer chia section, log drawer kiểu console, dialog import JSON, cửa sổ 1280x800.
 
-## Changed files (commit 25 — HEAD)
+## Changed files (commits 27–37)
 
-- src-tauri/crates/core/src/ssh.rs (SshChild::spawn: `Command::creation_flags(CREATE_NO_WINDOW)` on Windows)
-- SNAPSHOT (re-sync header + commit log + completed; trước đó commit 24 thay đổi 8 files retry policy)
+- src/styles/tokens.css, src/styles/app.css (copy nguyên bản từ export), src/styles/overrides.css (sửa lỗi của export: margin <p>, cột responsive, truncate tên; textarea + icon tile trung tính)
+- src/components: Icon, Topbar, Menu, Toasts, TunnelList, StatusBadge, ConfirmModal, BulkBar, Drawer, TunnelForm, LogDrawer, ImportJsonModal
+- src/lib: theme.ts, presence.ts, states.ts, logs.ts
+- src/App.tsx, src/main.tsx; xoá src/App.css
+- src-tauri/tauri.conf.json (window 1280x800, min 720x480)
+- docs/DESIGN_BRIEF.md, docs/DESIGN_SYSTEM.md, docs/design-system.html, .gitignore (bỏ qua thư mục export)
 
-## Checks (commit 25 — HEAD)
+## Checks (commit 37 — HEAD)
 
-- `cargo test -p tnls-core`: OK, 48 passed / 0 failed.
-- `cargo clippy -p tnls-core -- -D warnings`: OK.
-- `cargo fmt -- --check`: OK.
-- `cargo check --workspace` (MSVC): OK.
 - `npx tsc --noEmit`: OK.
-- `npm run build`: OK (27 modules).
-- `npm run tauri build` (release, 0.1.0, MSVC): OK — 4m14s, 2 bundles (msi 3.55 MiB, nsis 2.52 MiB, portable 7.33 MiB).
+- `npm run build`: OK (41 modules).
+- `cargo check --workspace` (MSVC): OK.
+- Kiểm tra giao diện bằng ảnh chụp headless Edge với backend giả (không commit): dark/light, chọn nhiều dòng, modal xoá, form (lỗi validate, edit + Advanced), log drawer (lọc, level), menu, import JSON, empty/no-match, 700/800/1100/1440px.
+- Chưa chạy `npm run tauri dev` với backend thật sau redesign.
 
 ## Known issues
 
@@ -102,5 +119,6 @@ Git log hiện có 25 commits — bảng dưới re-sync theo `git log --oneline
 
 ## Next
 
-- Đã build xong release 0.1.0 với fix console window: `src-tauri/target/release/bundle/nsis/tnls_0.1.0_x64-setup.exe` (2.52 MiB) sẵn sàng đưa máy khác.
-- Không còn việc Phase 2/3 bắt buộc — chờ báo cáo máy mới nếu phát sinh lỗi mới.
+- Chạy `npm run tauri dev` để kiểm tra redesign với backend thật (start/stop, sự kiện, keychain, autostart).
+- Phase 5 (chờ quyết định): command `preview_ssh_command` dùng `ssh::build_argv` cho ô preview trong form; lưu timestamp + level cho mỗi dòng log ở `manager.rs` (hiện log drawer hiển thị số dòng và đoán level ở frontend).
+- Còn thiếu so với design: nút Browse cho identity file (cần plugin dialog), font Söhne/JetBrains Mono (đang fallback Segoe UI / Cascadia Mono).
