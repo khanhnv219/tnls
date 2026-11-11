@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LogDrawer } from "./components/LogDrawer";
+import type { MenuEntry } from "./components/Menu";
+import { Toasts, useToasts } from "./components/Toasts";
+import { Topbar } from "./components/Topbar";
 import { TunnelForm } from "./components/TunnelForm";
 import { TunnelList } from "./components/TunnelList";
 import {
@@ -21,6 +24,7 @@ import {
   fireNotification,
   notifyForEvent,
 } from "./lib/notify";
+import { applyTheme, type Theme } from "./lib/theme";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
   TunnelConfig,
@@ -64,10 +68,11 @@ async function refresh(
   }
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 export default function App() {
   const [rows, setRows] = useState<TunnelRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [logTarget, setLogTarget] = useState<TunnelRow | null>(null);
   const [formTarget, setFormTarget] = useState<TunnelConfig | null | undefined>(
@@ -78,10 +83,17 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [theme, setTheme] = useState<Theme>(
+    () => (document.documentElement.dataset.theme as Theme) ?? "dark",
+  );
+  const { items: toasts, push: toast } = useToasts();
   const prevStates = useRef<Record<string, string>>({});
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const reload = useCallback(() => refresh(setRows, setLoadError), []);
 
   useEffect(() => {
-    refresh(setRows, setLoadError);
+    reload();
     void ensureNotificationPermission();
     let unsubscribe: (() => void) | undefined;
     onTunnelEvent((event) => {
@@ -95,12 +107,16 @@ export default function App() {
         }
         return current;
       });
-      refresh(setRows, setLoadError);
-    }).then((fn) => {
-      unsubscribe = fn;
-    });
+      reload();
+    })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch(() => {
+        // Outside the Tauri runtime there is no event bus.
+      });
     return () => unsubscribe?.();
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
     isEnabled()
@@ -108,7 +124,11 @@ export default function App() {
       .catch(() => setAutostart(null));
   }, []);
 
-  const searchRef = useRef<HTMLInputElement>(null);
+  const openNew = useCallback(() => {
+    setDraft(null);
+    setSaveError(null);
+    setFormTarget(null);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -127,36 +147,35 @@ export default function App() {
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        setDraft(null);
-        setSaveError(null);
-        setFormTarget(null);
+        openNew();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [query, formTarget, logTarget]);
+  }, [query, formTarget, logTarget, openNew]);
 
   const runAction = useCallback(
     async (id: string, action: (id: string) => Promise<unknown>) => {
       setPending((p) => ({ ...p, [id]: true }));
-      setActionError(null);
       try {
         await action(id);
       } catch (e) {
-        setActionError(String(e));
+        toast(String(e), "error");
       } finally {
         setPending((p) => ({ ...p, [id]: false }));
-        refresh(setRows, setLoadError);
+        reload();
       }
     },
-    [],
+    [reload, toast],
   );
 
-  const runningCount = useMemo(
-    () =>
-      rows.filter(
+  const stats = useMemo(
+    () => ({
+      running: rows.filter(
         (r) => r.status.state === "starting" || r.status.state === "running",
       ).length,
+      failed: rows.filter((r) => r.status.state === "failed").length,
+    }),
     [rows],
   );
 
@@ -184,7 +203,7 @@ export default function App() {
         }
         setDraft(null);
         setFormTarget(undefined);
-        refresh(setRows, setLoadError);
+        reload();
         return saved;
       } catch (e) {
         setSaveError(String(e));
@@ -193,7 +212,7 @@ export default function App() {
         setSaving(false);
       }
     },
-    [formTarget],
+    [formTarget, reload],
   );
 
   const handleDuplicate = useCallback((row: TunnelRow) => {
@@ -220,37 +239,52 @@ export default function App() {
     try {
       const json = await exportTunnelsJson();
       await navigator.clipboard.writeText(json);
-      setActionError("Exported JSON to clipboard.");
-      setTimeout(() => setActionError(null), 3000);
+      toast(`${plural(rows.length, "tunnel")} copied to clipboard as JSON`, "success");
     } catch (e) {
-      setActionError(`Export failed: ${String(e)}`);
+      toast(`Export failed: ${String(e)}`, "error");
     }
-  }, []);
+  }, [rows.length, toast]);
 
   const handleImportJson = useCallback(async () => {
     const json = prompt("Paste tunnels JSON (array of TunnelInput):");
     if (!json) return;
     try {
       const created = await importTunnelsJson(json);
-      setActionError(`Imported ${created.length} tunnel(s).`);
-      refresh(setRows, setLoadError);
-      setTimeout(() => setActionError(null), 4000);
+      toast(`Imported ${plural(created.length, "tunnel")} from JSON`, "success");
+      reload();
     } catch (e) {
-      setActionError(`Import failed: ${String(e)}`);
+      toast(`Import failed: ${String(e)}`, "error");
     }
-  }, []);
+  }, [reload, toast]);
 
   const handleImportSsh = useCallback(async () => {
-    const path = prompt("Path to ssh config (empty = ~/.ssh/config):", "") ?? "";
     try {
-      const created = await importSshConfig(path.trim() || null);
-      setActionError(`Imported ${created.length} tunnel(s) from ssh config.`);
-      refresh(setRows, setLoadError);
-      setTimeout(() => setActionError(null), 4000);
+      const created = await importSshConfig(null);
+      toast(
+        created.length === 0
+          ? "No LocalForward entries found in ~/.ssh/config"
+          : `Imported ${plural(created.length, "tunnel")} from ~/.ssh/config`,
+        created.length === 0 ? "info" : "success",
+      );
+      reload();
     } catch (e) {
-      setActionError(`SSH import failed: ${String(e)}`);
+      toast(`SSH config import failed: ${String(e)}`, "error");
     }
-  }, []);
+  }, [reload, toast]);
+
+  const toggleAutostart = useCallback(async () => {
+    if (autostart === null) return;
+    const next = !autostart;
+    setAutostart(next);
+    try {
+      if (next) await enable();
+      else await disable();
+      toast(next ? "tnls will start on login" : "tnls will not start on login", "info");
+    } catch (e) {
+      toast(`Could not change start-on-login: ${String(e)}`, "error");
+      setAutostart(await isEnabled().catch(() => null));
+    }
+  }, [autostart, toast]);
 
   const handleBulk = useCallback(
     async (action: (id: string) => Promise<unknown>) => {
@@ -258,128 +292,151 @@ export default function App() {
       for (const id of ids) {
         setPending((p) => ({ ...p, [id]: true }));
       }
-      setActionError(null);
       for (const id of ids) {
         try {
           await action(id);
         } catch (e) {
-          setActionError(String(e));
+          toast(String(e), "error");
         }
       }
       for (const id of ids) {
         setPending((p) => ({ ...p, [id]: false }));
       }
-      refresh(setRows, setLoadError);
+      reload();
     },
-    [visibleRows],
+    [visibleRows, reload, toast],
   );
 
+  const moreEntries: MenuEntry[] = [
+    { kind: "label", key: "import-label", label: "Import" },
+    {
+      kind: "item",
+      key: "import-ssh",
+      label: "From ~/.ssh/config",
+      icon: "file-code",
+      onSelect: handleImportSsh,
+    },
+    {
+      kind: "item",
+      key: "import-json",
+      label: "From JSON",
+      icon: "upload",
+      onSelect: handleImportJson,
+    },
+    { kind: "sep", key: "sep-1" },
+    { kind: "label", key: "export-label", label: "Export" },
+    {
+      kind: "item",
+      key: "export",
+      label: "Copy all as JSON",
+      icon: "download",
+      disabled: rows.length === 0,
+      onSelect: handleExportJson,
+    },
+    { kind: "sep", key: "sep-2" },
+    ...(autostart !== null
+      ? [
+          {
+            kind: "item" as const,
+            key: "autostart",
+            label: "Start tnls on login",
+            icon: autostart ? ("check" as const) : ("circle" as const),
+            shortcut: autostart ? "on" : "off",
+            onSelect: toggleAutostart,
+          },
+        ]
+      : []),
+    {
+      kind: "item",
+      key: "refresh",
+      label: "Reload from backend",
+      icon: "refresh",
+      onSelect: reload,
+    },
+  ];
+
+  const trimmedQuery = query.trim();
+
   return (
-    <main className="app">
-      <header className="topbar">
-        <div>
-          <h1>tnls</h1>
-          <p className="muted">
-            {rows.length} tunnel{rows.length === 1 ? "" : "s"} · {runningCount}{" "}
-            running
-          </p>
-        </div>
-        <div className="top-actions">
-          <input
-            ref={searchRef}
-            className="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, host, port… (/ to focus)"
-            aria-label="Search tunnels"
-          />
-          {query && (
-            <button className="ghost" onClick={() => setQuery("")} title="Clear search">
-              ✕
-            </button>
-          )}
-          <button
-            className="ghost"
-            onClick={() => refresh(setRows, setLoadError)}
-            title="Reload from backend"
-          >
-            Refresh
-          </button>
-          <button onClick={() => { setDraft(null); setSaveError(null); setFormTarget(null); }}>
-            + New tunnel
-          </button>
-        </div>
-      </header>
+    <>
+      <div className="app">
+        <Topbar
+          total={rows.length}
+          running={stats.running}
+          failed={stats.failed}
+          query={query}
+          onQuery={setQuery}
+          searchRef={searchRef}
+          theme={theme}
+          onToggleTheme={() => {
+            const next: Theme = theme === "dark" ? "light" : "dark";
+            applyTheme(next);
+            setTheme(next);
+          }}
+          moreEntries={moreEntries}
+          onNew={openNew}
+        />
 
-      {autostart !== null && (
-        <label className="autostart-row">
-          <input
-            type="checkbox"
-            checked={autostart}
-            onChange={async (e) => {
-              const next = e.target.checked;
-              setAutostart(next);
-              try {
-                if (next) await enable();
-                else await disable();
-              } catch {
-                try {
-                  setAutostart(await isEnabled());
-                } catch {
-                  setAutostart(null);
-                }
-              }
-            }}
-          />
-          Start on login
-        </label>
-      )}
+        <main className="main">
+          <div className="table-toolbar">
+            <span className="results-note" aria-live="polite">
+              {trimmedQuery !== "" &&
+                `${visibleRows.length} of ${rows.length} match "${trimmedQuery}"`}
+            </span>
+            {rows.length > 1 && (
+              <>
+                <button className="btn btn--sm btn--ghost" onClick={() => handleBulk(startTunnel)}>
+                  Start all visible
+                </button>
+                <button className="btn btn--sm btn--ghost" onClick={() => handleBulk(stopTunnel)}>
+                  Stop all visible
+                </button>
+              </>
+            )}
+            <div className="toolbar__spacer" />
+            <div className="toolbar__hint">
+              <kbd>/</kbd>
+              <span>search</span>
+              <kbd>Ctrl</kbd>
+              <kbd>N</kbd>
+              <span>new</span>
+              <kbd>Esc</kbd>
+              <span>close</span>
+            </div>
+          </div>
 
-      <div className="import-actions" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button className="ghost" onClick={handleExportJson}>Export JSON</button>
-        <button className="ghost" onClick={handleImportJson}>Import JSON</button>
-        <button className="ghost" onClick={handleImportSsh}>Import ~/.ssh/config</button>
+          <div className="table-scroll">
+            {loadError && (
+              <p
+                className="form-error"
+                role="alert"
+                style={{ margin: "var(--s-3) var(--page-pad)", alignItems: "center" }}
+              >
+                <span style={{ flex: "1 1 auto" }}>{loadError}</span>
+                <button className="btn btn--sm btn--ghost" type="button" onClick={reload}>
+                  Retry
+                </button>
+              </p>
+            )}
+            <TunnelList
+              rows={visibleRows}
+              pending={pending}
+              actionError={null}
+              onStart={(id) => runAction(id, startTunnel)}
+              onStop={(id) => runAction(id, stopTunnel)}
+              onRestart={(id) => runAction(id, restartTunnel)}
+              onDelete={(id) => runAction(id, deleteTunnel)}
+              onEdit={(row) => {
+                setDraft(null);
+                setSaveError(null);
+                setFormTarget(row);
+              }}
+              onDuplicate={handleDuplicate}
+              onShowLogs={setLogTarget}
+            />
+          </div>
+        </main>
       </div>
-
-      {rows.length > 1 && (
-        <div className="bulk-actions">
-          <button className="ghost" onClick={() => handleBulk(startTunnel)}>
-            Start all visible
-          </button>
-          <button className="ghost" onClick={() => handleBulk(stopTunnel)}>
-            Stop all visible
-          </button>
-          <span className="muted kbd-hint">Tip: / focus · Esc close · Ctrl+N new</span>
-        </div>
-      )}
-
-      {loadError && (
-        <p className="error" role="alert">
-          {loadError}{" "}
-          <button className="ghost" onClick={() => refresh(setRows, setLoadError)}>
-            Retry
-          </button>
-        </p>
-      )}
-
-      {query.trim() !== "" && (
-        <p className="muted">
-          {visibleRows.length} of {rows.length} shown
-        </p>
-      )}
-
-      <TunnelList
-        rows={visibleRows}
-        pending={pending}
-        actionError={actionError}
-        onStart={(id) => runAction(id, startTunnel)}
-        onStop={(id) => runAction(id, stopTunnel)}
-        onRestart={(id) => runAction(id, restartTunnel)}
-        onDelete={(id) => runAction(id, deleteTunnel)}
-        onEdit={(row) => { setDraft(null); setSaveError(null); setFormTarget(row); }}
-        onDuplicate={handleDuplicate}
-        onShowLogs={setLogTarget}
-      />
 
       {logTarget && (
         <LogDrawer
@@ -397,9 +454,14 @@ export default function App() {
           saving={saving}
           saveError={saveError}
           onSave={handleSave}
-          onClose={() => { setDraft(null); setFormTarget(undefined); }}
+          onClose={() => {
+            setDraft(null);
+            setFormTarget(undefined);
+          }}
         />
       )}
-    </main>
+
+      <Toasts items={toasts} />
+    </>
   );
 }
