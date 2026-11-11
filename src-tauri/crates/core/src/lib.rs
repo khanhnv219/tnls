@@ -7,6 +7,7 @@
 pub mod health;
 pub mod import;
 pub mod keychain;
+pub mod logs;
 pub mod manager;
 pub mod persistence;
 pub mod ssh;

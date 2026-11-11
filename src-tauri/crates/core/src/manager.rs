@@ -18,6 +18,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::health::{self, HEALTH_TIMEOUT};
+use crate::logs::LogLine;
 use crate::ssh::{self, SshChild, STARTUP_GRACE_MS};
 use crate::tunnel::{TunnelConfig, TunnelError, TunnelState, TunnelStatus};
 
@@ -153,7 +154,7 @@ pub enum ManagerEventKind {
 struct Runtime {
     status: TunnelStatus,
     child: Option<Box<dyn ManagedChild>>,
-    logs: VecDeque<String>,
+    logs: VecDeque<LogLine>,
     /// stderr of the current incarnation, for failure classification.
     incarnation_lines: Vec<String>,
     incarnation_started: Option<Instant>,
@@ -186,12 +187,14 @@ impl Runtime {
         }
     }
 
+    /// Append stderr lines, stamped with the collection time and a level.
     fn push_logs(&mut self, lines: Vec<String>) {
+        let at = Utc::now();
         for line in lines {
             if self.logs.len() >= LOG_CAP {
                 self.logs.pop_front();
             }
-            self.logs.push_back(line);
+            self.logs.push_back(LogLine::new(at, line));
         }
     }
 }
@@ -644,7 +647,7 @@ impl<S: Spawner> TunnelManager<S> {
     }
 
     /// Last `limit` log lines for a tunnel (oldest first).
-    pub fn logs(&self, id: &str, limit: usize) -> Result<Vec<String>, TunnelError> {
+    pub fn logs(&self, id: &str, limit: usize) -> Result<Vec<LogLine>, TunnelError> {
         let rt = self
             .runtimes
             .get(id)
@@ -922,8 +925,9 @@ mod tests {
         m.spawner.live_polls = 0;
         m.spawner.code = 255;
         let port = free_port();
-        m.spawner.stderr =
-            vec![format!("channel_setup_fwd_listener_tcpip: cannot listen to port: {port}")];
+        m.spawner.stderr = vec![format!(
+            "channel_setup_fwd_listener_tcpip: cannot listen to port: {port}"
+        )];
         m.upsert_config(local_config("conflict", port));
         let err = m.start("conflict").unwrap_err();
         assert!(matches!(err, TunnelError::PortInUse(_)));
@@ -971,7 +975,8 @@ mod tests {
         m.poll(Instant::now());
         let logs = m.logs("loggy", 10).unwrap();
         assert_eq!(logs.len(), 2);
-        assert!(logs[0].contains("Connecting"));
+        assert!(logs[0].text.contains("Connecting"));
+        assert_eq!(logs[0].level, crate::logs::LogLevel::Debug);
         let events = m.drain_events();
         assert!(events
             .iter()

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { LogLine } from "./logs";
 import type {
   ManagerEvent,
   TunnelConfig,
@@ -41,7 +42,7 @@ export async function restartTunnel(id: string): Promise<TunnelStatus> {
 export async function getTunnelLogs(
   id: string,
   limit?: number,
-): Promise<string[]> {
+): Promise<LogLine[]> {
   return invoke("get_tunnel_logs", { id, limit: limit ?? null });
 }
 

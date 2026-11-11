@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getTunnelLogs } from "../lib/api";
-import { classifyLevel, type LogLevel } from "../lib/logs";
+import { clockTime, type LogLevel, type LogLine } from "../lib/logs";
 import { Icon } from "./Icon";
 import type { PushToast } from "./Toasts";
 
@@ -38,7 +38,8 @@ function highlight(text: string, query: string) {
 
 /**
  * Head and body rows for the log drawer: a console of the tunnel's ssh
- * stderr, polled while open, with level filter, text filter and follow mode.
+ * stderr (time and level come from the backend), polled while open, with
+ * level filter, text filter and follow mode.
  */
 export function LogDrawer({
   tunnelId,
@@ -51,7 +52,7 @@ export function LogDrawer({
   onClose: () => void;
   notify: PushToast;
 }) {
-  const [lines, setLines] = useState<string[] | null>(null);
+  const [lines, setLines] = useState<LogLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState<LogLevel | "ALL">("ALL");
   const [filter, setFilter] = useState("");
@@ -82,7 +83,14 @@ export function LogDrawer({
   }, []);
 
   const parsed = useMemo(
-    () => (lines ?? []).map((msg, i) => ({ n: i + 1, msg, level: classifyLevel(msg) })),
+    () =>
+      (lines ?? []).map((l, i) => ({
+        n: i,
+        time: clockTime(l.at),
+        at: l.at,
+        msg: l.text,
+        level: l.level,
+      })),
     [lines],
   );
 
@@ -124,7 +132,9 @@ export function LogDrawer({
 
   const copyVisible = async () => {
     try {
-      await navigator.clipboard.writeText(visible.map((l) => `${l.level} ${l.msg}`).join("\n"));
+      await navigator.clipboard.writeText(
+        visible.map((l) => `${l.time} ${l.level} ${l.msg}`).join("\n"),
+      );
       notify(`${visible.length} log ${visible.length === 1 ? "line" : "lines"} copied`, "success");
     } catch {
       notify("Clipboard unavailable", "warn");
@@ -234,8 +244,8 @@ export function LogDrawer({
           >
             {visible.map((l) => (
               <div key={l.n} className="logline" data-level={l.level}>
-                <span className="logline__time" title="Line number">
-                  {l.n}
+                <span className="logline__time" title={new Date(l.at).toLocaleString()}>
+                  {l.time}
                 </span>
                 <span className="logline__level">{l.level}</span>
                 <span className="logline__msg">{highlight(l.msg, q)}</span>

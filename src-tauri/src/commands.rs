@@ -1,4 +1,5 @@
 use tauri::State;
+use tnls_core::logs::LogLine;
 use tnls_core::persistence;
 use tnls_core::tunnel::{TunnelConfig, TunnelInput, TunnelStatus};
 
@@ -74,7 +75,7 @@ pub fn get_tunnel_logs(
     state: State<'_, AppState>,
     id: String,
     limit: Option<usize>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<LogLine>, String> {
     state
         .manager()?
         .logs(&id, limit.unwrap_or(200).min(1000))
