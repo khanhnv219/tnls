@@ -107,6 +107,18 @@ pub fn get_runtime_status(state: State<'_, AppState>) -> Result<Vec<TunnelStatus
     Ok(state.manager()?.statuses())
 }
 
+/// Close dialog: keep running in the background; reopen from the tray icon.
+#[tauri::command]
+pub fn hide_to_tray(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
+
+/// Close dialog: stop every tunnel and exit.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    crate::tray::quit_gracefully(&app);
+}
+
 #[tauri::command]
 pub fn get_passphrase_state(id: String) -> Result<bool, String> {
     Ok(tnls_core::keychain::has_passphrase(&id))

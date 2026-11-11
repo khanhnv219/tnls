@@ -48,7 +48,9 @@ verification, agent, key parsing, jump host, reconnect — scope lớn, rủi ro
    (timeout, reset, server tạm unavailable). Không retry lỗi cấu hình
    (port conflict, bad key, host-key mismatch, permission denied).
 10. Không lưu password plaintext, private key, passphrase. Không bypass `known_hosts`.
-11. Đóng window ≠ thoát app (chạy tray); Quit thì stop toàn bộ tunnel, không để process mồ côi.
+11. Nút đóng window không tự thoát: app hỏi "Minimize to tray" hay "Quit" (có thể nhớ lựa chọn,
+    đổi lại trong menu ⋯ → Close button). Tray icon mở lại window. Quit (từ dialog, tray hay
+    lúc OS tắt app) luôn stop toàn bộ tunnel, không để process mồ côi.
 
 ## 5. MVP scope
 

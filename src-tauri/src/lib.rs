@@ -36,6 +36,8 @@ pub fn run() {
             commands::restart_tunnel,
             commands::get_tunnel_logs,
             commands::preview_ssh_command,
+            commands::hide_to_tray,
+            commands::quit_app,
             commands::get_runtime_status,
             commands::get_passphrase_state,
             commands::set_passphrase,
@@ -44,6 +46,11 @@ pub fn run() {
             commands::import_tunnels_json,
             commands::import_ssh_config,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                tray::on_exit(app);
+            }
+        });
 }

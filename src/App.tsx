@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar } from "./components/BulkBar";
+import { CloseAppModal } from "./components/CloseAppModal";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { Drawer } from "./components/Drawer";
 import { ImportJsonModal } from "./components/ImportJsonModal";
@@ -29,6 +30,15 @@ import {
   fireNotification,
   notifyForEvent,
 } from "./lib/notify";
+import {
+  hideToTray,
+  onCloseRequested,
+  quitApp,
+  saveCloseAction,
+  savedCloseAction,
+  takeTrayHint,
+  type CloseAction,
+} from "./lib/closeAction";
 import { canStart, canStop } from "./lib/states";
 import { applyTheme, type Theme } from "./lib/theme";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -97,6 +107,10 @@ export default function App() {
   const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeAction, setCloseAction] = useState<CloseAction>(savedCloseAction);
+  const closeActionRef = useRef(closeAction);
+  closeActionRef.current = closeAction;
   const { items: toasts, push: toast } = useToasts();
   const prevStates = useRef<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -134,6 +148,74 @@ export default function App() {
       .then(setAutostart)
       .catch(() => setAutostart(null));
   }, []);
+
+  const minimizeToTray = useCallback(async () => {
+    try {
+      await hideToTray();
+      if (takeTrayHint()) {
+        fireNotification(
+          "tnls is still running",
+          "Tunnels stay up. Click the tray icon to reopen the window.",
+        );
+      }
+    } catch (e) {
+      toast(`Could not minimize to tray: ${String(e)}`, "error");
+    }
+  }, [toast]);
+
+  const quit = useCallback(async () => {
+    try {
+      await quitApp();
+    } catch (e) {
+      toast(`Could not quit: ${String(e)}`, "error");
+    }
+  }, [toast]);
+
+  // The backend turns the window close button into this event.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    onCloseRequested(() => {
+      const action = closeActionRef.current;
+      if (action === "tray") void minimizeToTray();
+      else if (action === "quit") void quit();
+      else setCloseOpen(true);
+    })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch(() => {
+        // Outside the Tauri runtime there is no window to close.
+      });
+    return () => unsubscribe?.();
+  }, [minimizeToTray, quit]);
+
+  const chooseClose = useCallback(
+    (action: Exclude<CloseAction, "ask">, remember: boolean) => {
+      setCloseOpen(false);
+      if (remember) {
+        saveCloseAction(action);
+        setCloseAction(action);
+      }
+      if (action === "tray") void minimizeToTray();
+      else void quit();
+    },
+    [minimizeToTray, quit],
+  );
+
+  const cycleCloseAction = useCallback(() => {
+    const next: CloseAction =
+      closeAction === "ask" ? "tray" : closeAction === "tray" ? "quit" : "ask";
+    saveCloseAction(next);
+    setCloseAction(next);
+    toast(
+      next === "ask"
+        ? "Close button will ask what to do"
+        : next === "tray"
+          ? "Close button will minimize tnls to the tray"
+          : "Close button will quit tnls and stop all tunnels",
+      "info",
+    );
+  }, [closeAction, toast]);
 
   const openNew = useCallback(() => {
     setDraft(null);
@@ -499,6 +581,14 @@ export default function App() {
       : []),
     {
       kind: "item",
+      key: "close-action",
+      label: "Close button",
+      icon: "layers",
+      shortcut: closeAction === "ask" ? "ask" : closeAction === "tray" ? "to tray" : "quit",
+      onSelect: cycleCloseAction,
+    },
+    {
+      kind: "item",
       key: "refresh",
       label: "Reload from backend",
       icon: "refresh",
@@ -598,6 +688,13 @@ export default function App() {
           />
         </main>
       </div>
+
+      <CloseAppModal
+        open={closeOpen}
+        running={stats.running}
+        onCancel={() => setCloseOpen(false)}
+        onChoose={chooseClose}
+      />
 
       <ImportJsonModal
         open={importOpen}

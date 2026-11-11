@@ -58,3 +58,13 @@ textarea.input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Close dialog: "Remember my choice" row under the modal text. */
+.modal__remember {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  cursor: pointer;
+}

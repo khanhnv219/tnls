@@ -1,6 +1,7 @@
 //! System tray: show/hide window, start-all/stop-all, graceful quit.
 //!
-//! - Close button hides to tray instead of exiting (window event).
+//! - Close button asks the frontend: minimize to tray or quit (window event).
+//! - Left click on the tray icon (or "Show tnls") restores the window.
 //! - Tray title shows the live `N running` count (updated on every tick).
 //! - Quit stops all tunnels first, then exits — no orphaned ssh.
 
@@ -60,9 +61,10 @@ fn main_window<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::WebviewWindow<R>
     app.get_webview_window("main")
 }
 
-fn show_main<R: Runtime>(app: &AppHandle<R>) {
+pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = main_window(app) {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
     }
 }
@@ -114,17 +116,33 @@ fn stop_all_tunnels<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-fn quit_gracefully<R: Runtime>(app: &AppHandle<R>) {
-    tracing::info!("tray quit: stopping all tunnels");
+/// Stop every tunnel, then exit. Shared by the tray menu and the close dialog.
+pub fn quit_gracefully<R: Runtime>(app: &AppHandle<R>) {
+    tracing::info!("quit: stopping all tunnels");
     stop_all_tunnels(app);
     app.exit(0);
 }
 
-/// Hide-to-tray on close request; real quit only via tray menu.
+/// Event the main window receives when the user presses its close button.
+pub const CLOSE_REQUESTED_EVENT: &str = "app://close-requested";
+
+/// The close button never closes the window directly: the frontend asks
+/// whether to minimize to the tray or quit (or applies the remembered
+/// choice) and answers through `hide_to_tray` / `quit_app`.
 pub fn on_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent) {
-    if matches!(event, WindowEvent::CloseRequested { .. }) {
-        let _ = window.hide();
+    if let WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        if window.emit(CLOSE_REQUESTED_EVENT, ()).is_err() {
+            // No webview to ask: fall back to the safe choice, keep tunnels up.
+            let _ = window.hide();
+        }
     }
+}
+
+/// Stop tunnels on any exit path (OS shutdown, `app.exit`), so no ssh
+/// process outlives tnls. `stop_all` is a no-op when nothing runs.
+pub fn on_exit<R: Runtime>(app: &AppHandle<R>) {
+    stop_all_tunnels(app);
 }
 
 /// Refresh the tray title with the live running count. Called from the
