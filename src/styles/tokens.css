@@ -1,0 +1,266 @@
+/* ==========================================================================
+   tnls — Design tokens
+   Every color, size, space, and motion value in the app resolves here.
+   Light and dark are authored independently, not derived by inversion.
+   ========================================================================== */
+
+:root {
+  /* ---- Type families ---------------------------------------------------- */
+  --font-ui: "Söhne", "Söhne Buch", -apple-system, "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
+  --font-display: "Söhne Breit", "Söhne", "Segoe UI Variable Display",
+    -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Mono",
+    "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* ---- Type scale (1.2) ------------------------------------------------- */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 30px;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-body: 1.55;
+
+  --tracking-caps: 0.07em;
+  --tracking-label: 0.02em;
+  --tracking-display: -0.015em;
+
+  --weight-read: 400;
+  --weight-emphasize: 550;
+  --weight-announce: 620;
+
+  /* ---- Spacing (4px rhythm) -------------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+  --dur-drawer: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.84, 0);
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ---- Layout ----------------------------------------------------------- */
+  --topbar-h: 60px;
+  --bulkbar-h: 56px;
+  --drawer-w: 520px;
+  --log-drawer-w: 680px;
+  --page-pad: var(--s-6);
+  --row-h: 48px;
+
+  /* ---- Icon geometry ---------------------------------------------------- */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+
+  /* ---- Elevation (dark-authored, overridden in light) ------------------- */
+  --shadow-drawer: -24px 0 60px -12px rgb(0 0 0 / 0.55);
+  --shadow-modal: 0 24px 70px -16px rgb(0 0 0 / 0.62);
+  --shadow-pop: 0 10px 32px -8px rgb(0 0 0 / 0.55);
+}
+
+/* ==========================================================================
+   DARK — the primary authored theme
+   Ground: cold graphite. Not pure black; the slab reads as brushed metal.
+   Accent: a single desaturated teal used ONLY for liveness/affordance.
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ground-0: #0c0f13;
+  --ground-1: #11151a;
+  --ground-2: #171c22;
+  --ground-3: #1e242c;
+  --ground-4: #262d36;
+  --ground-hover: #1b2129;
+
+  --line-faint: #1f262e;
+  --line: #2a323d;
+  --line-strong: #3a444f;
+
+  --text-1: #e8edf2;
+  --text-2: #a3afbd;
+  --text-3: #6f7d8c;
+  --text-inverse: #0c0f13;
+
+  --accent: #2dd4bf;
+  --accent-strong: #5eead4;
+  --accent-dim: #0f3f3c;
+  --accent-text: #5eead4;
+  --on-accent: #04120f;
+
+  --ok: #34d399;
+  --ok-bg: #0d2e26;
+  --ok-line: #1b5a4b;
+
+  --warm: #fbbf24;
+  --warm-bg: #33280a;
+  --warm-line: #6b520f;
+
+  --warn: #fb923c;
+  --warn-bg: #341d0b;
+  --warn-line: #6d3c14;
+
+  --danger: #f87171;
+  --danger-bg: #38171a;
+  --danger-line: #6f2c31;
+  --danger-solid: #b91c1c;
+  --on-danger: #fff5f5;
+
+  --info: #7dd3fc;
+  --info-bg: #0c2733;
+  --info-line: #1c4a5e;
+
+  --focus-ring: #2dd4bf;
+  --selection-bg: #0f3f3c;
+
+  --input-bg: #0e1217;
+  --input-bg-focus: #131920;
+  --overlay: rgb(6 8 11 / 0.68);
+
+  /* log surface: deeper than the page so it reads as a separate instrument */
+  --log-bg: #080b0e;
+  --log-text: #b8c4d0;
+}
+
+/* ==========================================================================
+   LIGHT — authored separately. Paper-cool, not warm. Slate lines, teal accent.
+   ========================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ground-0: #f4f6f8;
+  --ground-1: #fbfcfd;
+  --ground-2: #ffffff;
+  --ground-3: #eef1f4;
+  --ground-4: #e3e8ed;
+  --ground-hover: #edf1f5;
+
+  --line-faint: #e6ebf0;
+  --line: #d5dde4;
+  --line-strong: #b7c2cd;
+
+  --text-1: #101820;
+  --text-2: #4a5a68;
+  --text-3: #6d7d8b;
+  --text-inverse: #ffffff;
+
+  --accent: #0d9488;
+  --accent-strong: #0f766e;
+  --accent-dim: #ccfbf1;
+  --accent-text: #0f766e;
+  --on-accent: #ffffff;
+
+  --ok: #059669;
+  --ok-bg: #e7f8f1;
+  --ok-line: #a7e3cc;
+
+  --warm: #b45309;
+  --warm-bg: #fdf3e0;
+  --warm-line: #f0d4a4;
+
+  --warn: #c2410c;
+  --warn-bg: #fdeee4;
+  --warn-line: #f3c9ae;
+
+  --danger: #c02626;
+  --danger-bg: #fdeaea;
+  --danger-line: #f2bcbc;
+  --danger-solid: #b91c1c;
+  --on-danger: #ffffff;
+
+  --info: #0369a1;
+  --info-bg: #e8f4fb;
+  --info-line: #b3d9ee;
+
+  --focus-ring: #0d9488;
+  --selection-bg: #ccfbf1;
+
+  --input-bg: #ffffff;
+  --input-bg-focus: #ffffff;
+  --overlay: rgb(16 24 32 / 0.42);
+
+  --log-bg: #101820;
+  --log-text: #c8d4df;
+
+  --shadow-drawer: -24px 0 60px -20px rgb(16 24 32 / 0.22);
+  --shadow-modal: 0 24px 70px -20px rgb(16 24 32 / 0.28);
+  --shadow-pop: 0 10px 32px -10px rgb(16 24 32 / 0.2);
+}
+
+/* ==========================================================================
+   Per-state status tokens — consumed by badges, row rails, spinners
+   ========================================================================== */
+
+:root {
+  --state-stopped-fg: var(--text-3);
+  --state-stopped-bg: var(--ground-3);
+  --state-stopped-line: var(--line);
+  --state-stopped-rail: var(--line-strong);
+
+  --state-starting-fg: var(--warm);
+  --state-starting-bg: var(--warm-bg);
+  --state-starting-line: var(--warm-line);
+  --state-starting-rail: var(--warm);
+
+  --state-running-fg: var(--ok);
+  --state-running-bg: var(--ok-bg);
+  --state-running-line: var(--ok-line);
+  --state-running-rail: var(--ok);
+
+  --state-degraded-fg: var(--warn);
+  --state-degraded-bg: var(--warn-bg);
+  --state-degraded-line: var(--warn-line);
+  --state-degraded-rail: var(--warn);
+
+  --state-stopping-fg: var(--warm);
+  --state-stopping-bg: var(--warm-bg);
+  --state-stopping-line: var(--warm-line);
+  --state-stopping-rail: var(--warm);
+
+  --state-failed-fg: var(--danger);
+  --state-failed-bg: var(--danger-bg);
+  --state-failed-line: var(--danger-line);
+  --state-failed-rail: var(--danger);
+
+  --state-unknown-fg: var(--info);
+  --state-unknown-bg: var(--info-bg);
+  --state-unknown-line: var(--info-line);
+  --state-unknown-rail: var(--info);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+    --dur-drawer: 1ms;
+  }
+}

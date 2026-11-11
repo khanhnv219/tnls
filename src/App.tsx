@@ -28,7 +28,6 @@ import type {
   TunnelRow,
   TunnelStatus,
 } from "./lib/types";
-import "./App.css";
 
 function mergeRows(
   configs: TunnelConfig[],
