@@ -24,6 +24,8 @@ export interface TunnelConfig {
   keepAliveInterval: number;
   maxRetries: number;
   retryDelaySecs: number;
+  /** Grouping tags; empty = Ungrouped. */
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +44,7 @@ export interface TunnelInput {
   keepAliveInterval?: number | null;
   maxRetries?: number | null;
   retryDelaySecs?: number | null;
+  tags?: string[] | null;
 }
 
 export interface TunnelStatus {

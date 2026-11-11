@@ -308,7 +308,14 @@ export function TunnelList({
                 <td className="cell-name">
                   <div className="name-stack">
                     <span className="name-stack__title">{row.name}</span>
-                    <span className="name-stack__sub">{row.sshTarget}</span>
+                    <span className="name-stack__sub" title={row.tags.join(", ") || undefined}>
+                      {row.sshTarget}
+                      {row.tags.map((tag) => (
+                        <span key={tag} className="tag-chip">
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
                   </div>
                 </td>
                 <td>

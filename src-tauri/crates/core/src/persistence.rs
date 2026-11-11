@@ -1,6 +1,6 @@
 //! SQLite persistence for tunnel profiles.
 //!
-//! `user_version = 3`. Rows map 1:1 to
+//! `user_version = 4`. Rows map 1:1 to
 //! [`TunnelConfig`](crate::tunnel::TunnelConfig); validation runs on every
 //! read so corrupt rows surface as [`TunnelError::Storage`] instead of
 //! silently producing invalid configs.
@@ -83,7 +83,16 @@ fn migrate(conn: &Connection) -> Result<(), TunnelError> {
             .map_err(|e| TunnelError::Storage(format!("stamp user_version v3: {e}")))?;
         version = 3;
     }
-    if version != 3 {
+    if version == 3 {
+        // Tags as a JSON array on the row (docs/DESIGN.md §7): existing
+        // profiles get '[]', i.e. Ungrouped.
+        conn.execute_batch("ALTER TABLE tunnels ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';")
+            .map_err(|e| TunnelError::Storage(format!("migrate to v4 tags: {e}")))?;
+        conn.execute_batch("PRAGMA user_version = 4")
+            .map_err(|e| TunnelError::Storage(format!("stamp user_version v4: {e}")))?;
+        version = 4;
+    }
+    if version != 4 {
         return Err(TunnelError::Storage(format!(
             "unsupported database version: {version}"
         )));
@@ -117,6 +126,9 @@ fn row_to_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<TunnelConfig> {
         keep_alive_interval: row.get::<_, i64>("keep_alive_interval")? as u64,
         max_retries: row.get::<_, i64>("max_retries")? as u32,
         retry_delay_secs: row.get::<_, i64>("retry_delay_secs")? as u64,
+        tags: serde_json::from_str(&row.get::<_, String>("tags")?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
+        })?,
         created_at: parse_rfc3339(created_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
         })?,
@@ -126,14 +138,18 @@ fn row_to_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<TunnelConfig> {
     })
 }
 
+fn tags_json(tags: &[String]) -> String {
+    serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_owned())
+}
+
 /// Insert a new tunnel from validated input; returns the stored config.
 pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, TunnelError> {
     let config = input.into_config()?;
     conn.execute(
         "INSERT INTO tunnels (id, name, mode, ssh_target, bind_address, local_port,
             remote_host, remote_port, identity_file, proxy_jump, auto_start, keep_alive_interval,
-            max_retries, retry_delay_secs, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            max_retries, retry_delay_secs, created_at, updated_at, tags)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             config.id,
             config.name,
@@ -151,6 +167,7 @@ pub fn create(conn: &Connection, input: TunnelInput) -> Result<TunnelConfig, Tun
             config.retry_delay_secs as i64,
             config.created_at.to_rfc3339(),
             config.updated_at.to_rfc3339(),
+            tags_json(&config.tags),
         ],
     )
     .map_err(|e| TunnelError::Storage(format!("insert tunnel: {e}")))?;
@@ -201,7 +218,7 @@ pub fn update(
             "UPDATE tunnels SET name=?1, mode=?2, ssh_target=?3, bind_address=?4,
                 local_port=?5, remote_host=?6, remote_port=?7, identity_file=?8,
                 proxy_jump=?9, auto_start=?10, keep_alive_interval=?11,
-                max_retries=?12, retry_delay_secs=?13, updated_at=?14
+                max_retries=?12, retry_delay_secs=?13, updated_at=?14, tags=?16
              WHERE id=?15",
             params![
                 current.name,
@@ -219,6 +236,7 @@ pub fn update(
                 current.retry_delay_secs as i64,
                 current.updated_at.to_rfc3339(),
                 current.id,
+                tags_json(&current.tags),
             ],
         )
         .map_err(|e| TunnelError::Storage(format!("update tunnel: {e}")))?;
@@ -276,6 +294,7 @@ mod tests {
             keep_alive_interval: None,
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         }
     }
 
@@ -353,7 +372,46 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
+    }
+
+    #[test]
+    fn v3_database_migrates_to_v4_with_ungrouped_rows() {
+        // A database as the previous release left it: schema v3, one row.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE tunnels ADD COLUMN proxy_jump TEXT;
+             ALTER TABLE tunnels ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 5;
+             ALTER TABLE tunnels ADD COLUMN retry_delay_secs INTEGER NOT NULL DEFAULT 1;
+             PRAGMA user_version = 3;
+             INSERT INTO tunnels (id, name, mode, ssh_target, local_port, remote_host,
+                remote_port, created_at, updated_at)
+             VALUES ('old', '9r-homelab', 'local', 'homelab', 20129, '127.0.0.1', 20128,
+                '2026-10-10T00:00:00Z', '2026-10-10T00:00:00Z');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let old = get(&conn, "old").unwrap();
+        assert_eq!(old.name, "9r-homelab");
+        assert!(old.tags.is_empty());
+    }
+
+    #[test]
+    fn tags_roundtrip_through_create_and_update() {
+        let conn = open_memory().unwrap();
+        let mut input = local_input("tagged");
+        input.tags = Some(vec!["homelab".into(), "9router".into()]);
+        let created = create(&conn, input).unwrap();
+        assert_eq!(
+            get(&conn, &created.id).unwrap().tags,
+            ["homelab", "9router"]
+        );
+
+        let mut upd = local_input("tagged");
+        upd.tags = Some(vec![]);
+        update(&conn, &created.id, upd).unwrap();
+        assert!(get(&conn, &created.id).unwrap().tags.is_empty());
     }
 
     #[test]

@@ -100,8 +100,29 @@ pub struct TunnelConfig {
     pub max_retries: u32,
     /// Base retry delay in seconds (backoff doubles, capped at 30s).
     pub retry_delay_secs: u64,
+    /// Free-form tags for grouping (see docs/DESIGN.md §7). Empty = Ungrouped.
+    /// Trimmed, de-duplicated case-insensitively, original order kept.
+    pub tags: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Longest accepted tag, in characters.
+pub const MAX_TAG_LEN: usize = 32;
+/// Most tags one tunnel may carry.
+pub const MAX_TAGS: usize = 16;
+
+/// Trim, drop empties, de-duplicate case-insensitively (first spelling wins).
+pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.trim().to_owned();
+        if tag.is_empty() || out.iter().any(|t| t.eq_ignore_ascii_case(&tag)) {
+            continue;
+        }
+        out.push(tag);
+    }
+    out
 }
 
 /// Input for create/update commands: same fields minus id/timestamps.
@@ -121,6 +142,9 @@ pub struct TunnelInput {
     pub keep_alive_interval: Option<u64>,
     pub max_retries: Option<u32>,
     pub retry_delay_secs: Option<u64>,
+    /// Missing in exports from before tags existed; treated as no tags.
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 impl TunnelInput {
     /// Fill defaults, assign id + timestamps, then validate.
@@ -162,6 +186,7 @@ impl TunnelInput {
             keep_alive_interval: self.keep_alive_interval.unwrap_or(30),
             max_retries: self.max_retries.unwrap_or(5),
             retry_delay_secs: self.retry_delay_secs.unwrap_or(1),
+            tags: normalize_tags(self.tags.unwrap_or_default()),
             created_at: now,
             updated_at: now,
         }
@@ -203,6 +228,20 @@ impl TunnelConfig {
         }
         if self.retry_delay_secs == 0 || self.retry_delay_secs > 30 {
             return Err(TunnelError::InvalidRetryDelay);
+        }
+        if self.tags.len() > MAX_TAGS {
+            return Err(TunnelError::InvalidTag(format!(
+                "at most {MAX_TAGS} tags per tunnel"
+            )));
+        }
+        if let Some(tag) = self
+            .tags
+            .iter()
+            .find(|t| t.trim().is_empty() || t.chars().count() > MAX_TAG_LEN)
+        {
+            return Err(TunnelError::InvalidTag(format!(
+                "{tag:?} must be 1–{MAX_TAG_LEN} characters"
+            )));
         }
         Ok(())
     }
@@ -308,6 +347,8 @@ pub enum TunnelError {
     InvalidRetryDelay,
     #[error("invalid tunnel mode: {0}")]
     InvalidMode(String),
+    #[error("invalid tag: {0}")]
+    InvalidTag(String),
     #[error("local endpoint {0} is already in use")]
     PortInUse(String),
     #[error("failed to spawn ssh: {0}")]
@@ -336,7 +377,34 @@ mod tests {
             keep_alive_interval: None,
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         }
+    }
+
+    #[test]
+    fn tags_are_normalized_and_validated() {
+        let mut input = local_input();
+        input.tags = Some(vec![
+            " homelab ".into(),
+            "9router".into(),
+            "HomeLab".into(),
+            "".into(),
+        ]);
+        let cfg = input.into_config().unwrap();
+        assert_eq!(cfg.tags, vec!["homelab", "9router"]);
+
+        let mut input = local_input();
+        input.tags = Some(vec!["x".repeat(MAX_TAG_LEN + 1)]);
+        assert!(matches!(
+            input.into_config().unwrap_err(),
+            TunnelError::InvalidTag(_)
+        ));
+
+        // Exports from before tags existed have no `tags` key.
+        let json = r#"{"name":"db","mode":"local","sshTarget":"h","localPort":5433,
+            "remoteHost":"db","remotePort":5432}"#;
+        let old: TunnelInput = serde_json::from_str(json).unwrap();
+        assert!(old.into_config().unwrap().tags.is_empty());
     }
 
     #[test]

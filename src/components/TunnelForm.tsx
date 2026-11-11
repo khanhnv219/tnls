@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { deletePassphrase, getPassphraseState } from "../lib/api";
 import type { TunnelConfig, TunnelInput, TunnelMode } from "../lib/types";
 import { CommandPreview } from "./CommandPreview";
+import { TagInput } from "./TagInput";
 import { Icon } from "./Icon";
 import type { PushToast } from "./Toasts";
 
@@ -123,6 +124,7 @@ export function TunnelForm({
   onSave,
   onClose,
   notify,
+  tagSuggestions,
 }: {
   initial: TunnelConfig | null;
   draft?: TunnelInput | null;
@@ -131,6 +133,8 @@ export function TunnelForm({
   onSave: (input: TunnelInput, passphrase: string) => Promise<void>;
   onClose: () => void;
   notify: PushToast;
+  /** Tags already used by other tunnels. */
+  tagSuggestions: string[];
 }) {
   const seed: Partial<TunnelInput> | null = draft ?? initial;
   const [values, setValues] = useState<Values>(() => ({
@@ -148,6 +152,7 @@ export function TunnelForm({
   const [identityFile, setIdentityFile] = useState(seed?.identityFile ?? "");
   const [proxyJump, setProxyJump] = useState(seed?.proxyJump ?? "");
   const [autoStart, setAutoStart] = useState(seed?.autoStart ?? false);
+  const [tags, setTags] = useState<string[]>(seed?.tags ?? []);
   const [passphrase, setPassphrase] = useState("");
   const [hasStored, setHasStored] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
@@ -253,6 +258,7 @@ export function TunnelForm({
           keepAliveInterval: Number(values.keepAlive.trim()),
           maxRetries: Number(values.maxRetries.trim()),
           retryDelaySecs: Number(values.retryDelay.trim()),
+          tags,
         },
         passphrase,
       );
@@ -315,6 +321,13 @@ export function TunnelForm({
               </label>
               {input("name", { placeholder: "Dev PostgreSQL" })}
               <FieldError id="f-name-error" message={errors.name} />
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="f-tags">
+                Tags <span className="field__optional">optional, Enter to add</span>
+              </label>
+              <TagInput id="f-tags" tags={tags} suggestions={tagSuggestions} onChange={setTags} />
             </div>
 
             <div className="field">

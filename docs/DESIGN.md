@@ -102,7 +102,37 @@ CREATE TABLE tunnels (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+-- v2: proxy_jump TEXT
+-- v3: max_retries INTEGER NOT NULL DEFAULT 5, retry_delay_secs INTEGER NOT NULL DEFAULT 1
+-- v4: tags TEXT NOT NULL DEFAULT '[]'   -- JSON array of strings
 ```
+
+### 7.1 Tags (v4)
+
+Chọn **nhiều tag cho mỗi tunnel**, lưu dạng mảng JSON trong cột `tags` của bảng
+`tunnels`, thay vì bảng `tags` + bảng nối:
+
+- Một tunnel thường thuộc nhiều nhóm cùng lúc (`homelab` + `9router`), nên "một group
+  mỗi tunnel" sẽ sớm không đủ.
+- Số tunnel nhỏ (hàng chục), lọc theo tag làm ở frontend trên danh sách đã load; không
+  cần index hay JOIN. Bảng nối chỉ thêm migration và đồng bộ mà không đổi được gì.
+- Tag tồn tại khi còn ít nhất một tunnel dùng nó; không có danh sách tag riêng để quản lý.
+
+Quy tắc (`tunnel::normalize_tags`, kiểm tra trong `validate`): trim, bỏ chuỗi rỗng, trùng
+không phân biệt hoa thường thì giữ cách viết đầu tiên, tối đa 16 tag, mỗi tag 1–32 ký tự.
+Tunnel không có tag hiện là **Ungrouped**. Migration v4 thêm cột với mặc định `'[]'`, nên
+mọi profile cũ load được và rơi vào Ungrouped.
+
+Import/Export:
+
+| Đường | Tags |
+|---|---|
+| Export JSON ("Copy all as JSON") | Có, trường `tags` |
+| Import JSON | Có; file export cũ không có `tags` vẫn import được (coi như không tag) |
+| Duplicate | Giữ nguyên tags |
+| Import `~/.ssh/config` | Không: định dạng ssh_config không có khái niệm tag, tunnel import vào Ungrouped |
+
+Phạm vi: chỉ nhóm tunnel. Không có folder cho host, không chia sẻ theo user/role, không sync.
 
 ## 8. API Tauri (frontend ↔ Rust)
 

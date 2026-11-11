@@ -237,6 +237,7 @@ pub fn host_to_inputs(host: &HostImport) -> Vec<TunnelInput> {
             keep_alive_interval: Some(30),
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         })
         .collect()
 }
@@ -312,6 +313,7 @@ mod tests {
             keep_alive_interval: None,
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         };
         let json = format_json_inputs(std::slice::from_ref(&input));
         let parsed = parse_json_inputs(&json).unwrap();

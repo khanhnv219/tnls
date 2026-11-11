@@ -3,6 +3,7 @@ import { BulkBar } from "./components/BulkBar";
 import { CloseAppModal } from "./components/CloseAppModal";
 import { ConfirmModal, type ConfirmContent } from "./components/ConfirmModal";
 import { Drawer } from "./components/Drawer";
+import { Icon } from "./components/Icon";
 import { ImportJsonModal } from "./components/ImportJsonModal";
 import { LogDrawer } from "./components/LogDrawer";
 import type { MenuEntry } from "./components/Menu";
@@ -86,6 +87,9 @@ async function refresh(
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** Tag-filter value for tunnels without tags (not a valid tag: tags are trimmed). */
+const UNGROUPED = " ungrouped";
+
 export default function App() {
   const [rows, setRows] = useState<TunnelRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -103,6 +107,7 @@ export default function App() {
     () => (document.documentElement.dataset.theme as Theme) ?? "dark",
   );
   const [deleteTargets, setDeleteTargets] = useState<TunnelRow[] | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
   const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -327,16 +332,57 @@ export default function App() {
     [rows],
   );
 
+  // Tag filter: null = all tunnels, UNGROUPED = tunnels without tags.
+  const tagGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    let ungrouped = 0;
+    for (const r of rows) {
+      if (r.tags.length === 0) ungrouped += 1;
+      for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const tags = [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return { tags, ungrouped };
+  }, [rows]);
+
+  // A filter on a tag that no longer exists falls back to "all".
+  const activeTag =
+    tagFilter === null ||
+    tagFilter === UNGROUPED ||
+    tagGroups.tags.some(([t]) => t === tagFilter)
+      ? tagFilter
+      : null;
+
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (q === "") return rows;
-    return rows.filter((r) =>
-      [r.name, r.sshTarget, r.remoteHost ?? "", `${r.localPort}`, `${r.remotePort ?? ""}`]
+    return rows.filter((r) => {
+      if (activeTag === UNGROUPED && r.tags.length > 0) return false;
+      if (activeTag !== null && activeTag !== UNGROUPED && !r.tags.includes(activeTag)) {
+        return false;
+      }
+      if (q === "") return true;
+      return [
+        r.name,
+        r.sshTarget,
+        r.remoteHost ?? "",
+        `${r.localPort}`,
+        `${r.remotePort ?? ""}`,
+        ...r.tags,
+      ]
         .join(" ")
         .toLowerCase()
-        .includes(q),
+        .includes(q);
+    });
+  }, [rows, query, activeTag]);
+
+  // Rows in the active tag group, ignoring the text search.
+  const groupRows = useMemo(() => {
+    if (activeTag === null) return [];
+    return rows.filter((r) =>
+      activeTag === UNGROUPED ? r.tags.length === 0 : r.tags.includes(activeTag),
     );
-  }, [rows, query]);
+  }, [rows, activeTag]);
+
+  const tagSuggestions = useMemo(() => tagGroups.tags.map(([t]) => t), [tagGroups]);
 
   const handleSave = useCallback(
     async (input: TunnelInput, passphrase: string): Promise<void> => {
@@ -389,6 +435,7 @@ export default function App() {
       keepAliveInterval: row.keepAliveInterval,
       maxRetries: row.maxRetries,
       retryDelaySecs: row.retryDelaySecs,
+      tags: row.tags,
     });
     setFormTarget(null);
   }, []);
@@ -443,24 +490,25 @@ export default function App() {
     }
   }, [autostart, toast]);
 
-  /** Run one action over the selected rows that are in a legal state for it. */
+  /**
+   * Run one action over `targets` (the selection or a tag group), touching
+   * only rows in a legal state for it.
+   */
   const handleBulk = useCallback(
-    async (kind: "start" | "stop" | "restart") => {
-      const eligible = rows.filter(
-        (r) =>
-          selection.has(r.id) &&
-          (kind === "start"
-            ? canStart(r.status.state)
-            : kind === "stop"
-              ? canStop(r.status.state)
-              : true),
+    async (kind: "start" | "stop" | "restart", targets: TunnelRow[]) => {
+      const eligible = targets.filter((r) =>
+        kind === "start"
+          ? canStart(r.status.state)
+          : kind === "stop"
+            ? canStop(r.status.state)
+            : true,
       );
       if (eligible.length === 0) {
         toast(
           kind === "start"
-            ? "All selected tunnels are already up"
+            ? "These tunnels are already up"
             : kind === "stop"
-              ? "None of the selected tunnels are running"
+              ? "None of these tunnels are running"
               : "Nothing to restart",
           "info",
         );
@@ -487,7 +535,12 @@ export default function App() {
       if (done > 0) toast(`${verb} ${plural(done, "tunnel")}`, "info");
       reload();
     },
-    [rows, selection, reload, toast],
+    [reload, toast],
+  );
+
+  const selectedRows = useMemo(
+    () => rows.filter((r) => selection.has(r.id)),
+    [rows, selection],
   );
 
   const deleteContent = useMemo<ConfirmContent | null>(() => {
@@ -620,6 +673,71 @@ export default function App() {
 
         <main className={`main${selection.size > 0 ? " has-bulk" : ""}`}>
           <div className="table-toolbar">
+            {tagGroups.tags.length > 0 && (
+              <div className="tag-filter" role="group" aria-label="Filter by tag">
+                <button
+                  className="tag-filter__opt"
+                  type="button"
+                  aria-pressed={activeTag === null}
+                  onClick={() => setTagFilter(null)}
+                >
+                  All <span className="tag-filter__count">{rows.length}</span>
+                </button>
+                {tagGroups.tags.map(([tag, count]) => (
+                  <button
+                    key={tag}
+                    className="tag-filter__opt"
+                    type="button"
+                    aria-pressed={activeTag === tag}
+                    onClick={() => setTagFilter(activeTag === tag ? null : tag)}
+                  >
+                    {tag} <span className="tag-filter__count">{count}</span>
+                  </button>
+                ))}
+                {tagGroups.ungrouped > 0 && (
+                  <button
+                    className="tag-filter__opt"
+                    type="button"
+                    aria-pressed={activeTag === UNGROUPED}
+                    onClick={() => setTagFilter(activeTag === UNGROUPED ? null : UNGROUPED)}
+                  >
+                    Ungrouped <span className="tag-filter__count">{tagGroups.ungrouped}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {activeTag !== null && groupRows.length > 0 && (
+              <div className="group-actions" role="group" aria-label="Actions for this group">
+                <button
+                  className="btn btn--sm btn--ghost"
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => handleBulk("start", groupRows)}
+                  title={`Start every tunnel in ${activeTag === UNGROUPED ? "Ungrouped" : activeTag}`}
+                >
+                  <Icon name="play" size={13} />
+                  Start group
+                </button>
+                <button
+                  className="btn btn--sm btn--ghost"
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => handleBulk("stop", groupRows)}
+                >
+                  <Icon name="stop" size={13} />
+                  Stop group
+                </button>
+                <button
+                  className="btn btn--sm btn--danger-ghost"
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => setDeleteTargets(groupRows)}
+                >
+                  <Icon name="trash" size={13} />
+                  Delete group
+                </button>
+              </div>
+            )}
             <span className="results-note" aria-live="polite">
               {trimmedQuery !== "" &&
                 `${visibleRows.length} of ${rows.length} match "${trimmedQuery}"`}
@@ -680,10 +798,10 @@ export default function App() {
           <BulkBar
             count={selection.size}
             busy={bulkBusy}
-            onStart={() => handleBulk("start")}
-            onStop={() => handleBulk("stop")}
-            onRestart={() => handleBulk("restart")}
-            onDelete={() => setDeleteTargets(rows.filter((r) => selection.has(r.id)))}
+            onStart={() => handleBulk("start", selectedRows)}
+            onStop={() => handleBulk("stop", selectedRows)}
+            onRestart={() => handleBulk("restart", selectedRows)}
+            onDelete={() => setDeleteTargets(selectedRows)}
             onClear={() => setSelection(new Set())}
           />
         </main>
@@ -731,6 +849,7 @@ export default function App() {
             onSave={handleSave}
             onClose={closeForm}
             notify={toast}
+            tagSuggestions={tagSuggestions}
           />
         )}
       </Drawer>

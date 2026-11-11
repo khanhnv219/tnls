@@ -279,6 +279,7 @@ mod tests {
             keep_alive_interval: None,
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         }
         .into_config()
         .unwrap()
@@ -351,6 +352,7 @@ mod tests {
             keep_alive_interval: None,
             max_retries: None,
             retry_delay_secs: None,
+            tags: None,
         }
         .into_draft();
         let args = preview_args(&draft);

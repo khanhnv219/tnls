@@ -68,3 +68,142 @@ textarea.input {
   color: var(--text-2);
   cursor: pointer;
 }
+
+/* ==========================================================================
+   Tags / groups (P1.3). Not in the exported design system; composed from its
+   tokens: chips reuse the mode-chip recipe, the filter reuses pill + accent
+   for the selected group (accent = focused / actionable).
+   ========================================================================== */
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: var(--ground-3);
+  border: 1px solid var(--line);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-emphasize);
+  line-height: 1;
+  color: var(--text-2);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.name-stack__sub .tag-chip {
+  margin-left: var(--s-1);
+}
+
+.tag-chip--removable button {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-right: -3px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.tag-chip--removable button:hover {
+  color: var(--text-1);
+  background: var(--ground-4);
+}
+
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1);
+  min-height: 36px;
+  padding: 4px var(--s-2);
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.tag-input:hover {
+  border-color: var(--line-strong);
+}
+
+.tag-input:focus-within {
+  border-color: var(--accent);
+  background: var(--input-bg-focus);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+.tag-input__field {
+  flex: 1 1 80px;
+  min-width: 80px;
+  height: 26px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+
+.tag-input__field::placeholder {
+  color: var(--text-3);
+}
+
+.tag-input__field:focus-visible {
+  outline: none;
+}
+
+.tag-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tag-filter__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-emphasize);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.tag-filter__opt:hover {
+  border-color: var(--line-strong);
+  color: var(--text-1);
+}
+
+.tag-filter__opt[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.tag-filter__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--line);
+}
