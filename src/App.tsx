@@ -144,43 +144,61 @@ export default function App() {
     setFormTarget(undefined);
   }, []);
 
+  const closeLogs = useCallback(() => setLogTarget(null), []);
+
+  // Keyboard map (DESIGN_SYSTEM.md §6.11). Menus handle their own Esc in the
+  // capture phase; an open <dialog> handles Esc through its cancel event.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const inField = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-      if (e.key === "/" && !inField) {
+      const dialogOpen = document.querySelector("dialog[open]") !== null;
+      const formOpen = formTarget !== undefined;
+      const logOpen = logTarget !== null;
+
+      if (e.key === "Escape") {
+        if (dialogOpen) return;
+        if (formOpen) closeForm();
+        else if (logOpen) closeLogs();
+        else if (selection.size > 0) setSelection(new Set());
+        else if (query) setQuery("");
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        searchRef.current?.focus();
-      } else if (e.key === "Escape") {
-        // An open <dialog> handles Esc itself through its cancel event.
-        if (document.querySelector("dialog[open]")) return;
-        if (formTarget !== undefined || logTarget) {
-          setDraft(null);
-          setFormTarget(undefined);
-          setLogTarget(null);
-        } else if (selection.size > 0) {
-          setSelection(new Set());
-        } else if (query) {
-          setQuery("");
+        if (!formOpen && !dialogOpen) openNew();
+        return;
+      }
+      if (inField || dialogOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === "/") {
+        e.preventDefault();
+        if (logOpen) {
+          document.querySelector<HTMLInputElement>(".logbar__search input")?.focus();
+        } else if (!formOpen) {
+          searchRef.current?.focus();
         }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        openNew();
-      } else if (
-        e.key === "Delete" &&
-        !inField &&
-        selection.size > 0 &&
-        formTarget === undefined &&
-        !logTarget &&
-        !document.querySelector("dialog[open]")
-      ) {
+      } else if (e.key.toLowerCase() === "l" && !formOpen) {
+        // Toggle the log drawer for the row that currently holds focus.
+        if (logOpen) {
+          e.preventDefault();
+          closeLogs();
+          return;
+        }
+        const id = target.closest<HTMLElement>("tr[data-id]")?.dataset.id;
+        const row = id ? rows.find((r) => r.id === id) : undefined;
+        if (row) {
+          e.preventDefault();
+          setLogTarget(row);
+        }
+      } else if (e.key === "Delete" && selection.size > 0 && !formOpen && !logOpen) {
         e.preventDefault();
         setDeleteTargets(rows.filter((r) => selection.has(r.id)));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [query, formTarget, logTarget, openNew, selection, rows]);
+  }, [query, formTarget, logTarget, openNew, closeForm, closeLogs, selection, rows]);
 
   // Drop selected ids whose rows no longer exist (deleted elsewhere).
   useEffect(() => {
@@ -586,13 +604,17 @@ export default function App() {
         onConfirm={confirmDelete}
       />
 
-      {logTarget && (
-        <LogDrawer
-          tunnelId={logTarget.id}
-          tunnelName={logTarget.name}
-          onClose={() => setLogTarget(null)}
-        />
-      )}
+      <Drawer open={logTarget !== null} wide labelledBy="log-title" onClose={closeLogs}>
+        {logTarget && (
+          <LogDrawer
+            key={logTarget.id}
+            tunnelId={logTarget.id}
+            tunnelName={logTarget.name}
+            onClose={closeLogs}
+            notify={toast}
+          />
+        )}
+      </Drawer>
 
       <Drawer open={formTarget !== undefined} labelledBy="form-title" onClose={closeForm}>
         {formTarget !== undefined && (
