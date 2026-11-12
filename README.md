@@ -142,8 +142,8 @@ above locally before you push.
 Pushing a tag `v<version>` that matches `version` in
 `src-tauri/tauri.conf.json` runs the [`release`](.github/workflows/release.yml)
 workflow. It builds installers for Windows, macOS (Apple Silicon and Intel) and
-Linux and attaches them to a **draft** GitHub Release; publish the draft by hand.
-It does not run tests.
+Linux and publishes them as a GitHub Release. It does not run tests, so run the
+`test` workflow or the local checks first.
 
 ```bash
 git tag v0.2.0

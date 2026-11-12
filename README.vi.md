@@ -141,9 +141,9 @@ trước khi push.
 
 Push một tag `v<version>` khớp với `version` trong `src-tauri/tauri.conf.json`
 sẽ chạy workflow [`release`](.github/workflows/release.yml). Workflow build bộ
-cài cho Windows, macOS (Apple Silicon và Intel) và Linux rồi đính kèm vào một
-GitHub Release dạng **draft**; bạn tự bấm publish bản draft. Workflow này không
-chạy test.
+cài cho Windows, macOS (Apple Silicon và Intel) và Linux rồi publish thành một
+GitHub Release. Workflow này không chạy test, nên hãy chạy workflow `test` hoặc
+các lệnh kiểm tra trên máy trước.
 
 ```bash
 git tag v0.2.0

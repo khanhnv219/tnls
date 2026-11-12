@@ -1,6 +1,6 @@
 name: release
 
-# Push a version tag to build installers and create a draft GitHub Release:
+# Push a version tag to build installers and publish a GitHub Release:
 #   git tag v0.2.0 && git push origin v0.2.0
 # The tag must match "version" in src-tauri/tauri.conf.json (v + version).
 # Tests are not run here; use the "test" workflow (manual) for that.
@@ -84,6 +84,6 @@ jobs:
 
             The builds are not code-signed: Windows SmartScreen and macOS Gatekeeper will warn on first launch.
             tnls needs an OpenSSH client (`ssh`) on PATH.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
