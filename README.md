@@ -170,7 +170,7 @@ the UI design system is in [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
 | Platform | Windows (tested); macOS/Linux build from source, untested | Web (self-hosted), Windows, macOS, Linux, iOS, Android | not verified | macOS |
 | Tunnel types | `-L`, `-R`, `-D`, ProxyJump | SSH port forwarding with auto-reconnect, plus WireGuard gateways | not verified | local, remote, dynamic, ProxyJump |
 | Server required? | No | Self-hosted server (Docker) for the web app | not verified | No |
-| Price | No cost; no license chosen yet | Free, open source (Apache 2.0) | not verified | Free for 1 host; Premium from US$9.99/year |
+| Price | Free, open source (MIT) | Free, open source (Apache 2.0) | not verified | Free for 1 host; Premium from US$9.99/year |
 | Best for | A desktop list of tunnels on top of the OpenSSH you already use | An all-in-one self-hosted server hub (terminal, SFTP, remote desktop, tunnels) | not verified | Mac users who want a menu-bar tunnel manager with Keychain, tags and sync |
 
 Sources: [Termix README](https://github.com/Termix-SSH/Termix),
@@ -187,4 +187,4 @@ and update [`docs/DESIGN.md`](docs/DESIGN.md) when you change a design decision.
 
 ## License
 
-License: TBD — no license file in the repo yet.
+[MIT](LICENSE) © 2026 Van Khanh Nguyen

@@ -171,7 +171,7 @@ Các quyết định thiết kế và mô hình dữ liệu nằm trong
 | Nền tảng | Windows (đã thử); macOS/Linux tự build, chưa thử | Web (tự host), Windows, macOS, Linux, iOS, Android | chưa xác minh | macOS |
 | Kiểu tunnel | `-L`, `-R`, `-D`, ProxyJump | SSH port forwarding tự kết nối lại, cùng WireGuard gateway | chưa xác minh | local, remote, dynamic, ProxyJump |
 | Cần server? | Không | Server tự host (Docker) cho bản web | chưa xác minh | Không |
-| Giá | Không mất phí; chưa chọn license | Miễn phí, mã nguồn mở (Apache 2.0) | chưa xác minh | Miễn phí cho 1 host; Premium từ 9,99 USD/năm |
+| Giá | Miễn phí, mã nguồn mở (MIT) | Miễn phí, mã nguồn mở (Apache 2.0) | chưa xác minh | Miễn phí cho 1 host; Premium từ 9,99 USD/năm |
 | Phù hợp với | Danh sách tunnel trên desktop, dùng OpenSSH sẵn có | Trung tâm quản lý server tự host gộp nhiều thứ (terminal, SFTP, remote desktop, tunnel) | chưa xác minh | Người dùng Mac muốn trình quản lý tunnel trên menu bar có Keychain, tag và sync |
 
 Nguồn: [README của Termix](https://github.com/Termix-SSH/Termix),
@@ -189,4 +189,4 @@ quyết định thiết kế.
 
 ## License
 
-License: TBD — repo chưa có file license.
+[MIT](LICENSE) © 2026 Van Khanh Nguyen
